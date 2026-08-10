@@ -38,7 +38,7 @@ struct SettingsView: View {
                 Picker("Последнее слово", selection: $settings.manualHotkey) {
                     ForEach(HotkeyChoice.allCases) { choice in Text(choice.title).tag(choice) }
                 }
-                Text("Преобразование выделения использует тот же хоткей с добавленным Command (или Control при конфликте).")
+                Text("Преобразование выделения: \(settings.manualHotkey.selectionTitle). К базовой комбинации добавляется Command, а при конфликте — Control.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

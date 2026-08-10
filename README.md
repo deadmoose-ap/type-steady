@@ -32,6 +32,8 @@ open "dist/Lang Switcher.app"
 - Control+Option+Space — исправить последнее слово;
 - Control+Option+Command+Space — преобразовать выделение.
 
+В настройках также доступны `Option+Space`, `Control+Shift+Space` и `Command+Option+Space`. Комбинация для выделения показывается рядом и автоматически получает дополнительный Command либо Control.
+
 ## Сборка
 
 ```bash
@@ -48,9 +50,12 @@ swift run --disable-sandbox LangSwitcher --self-test
 
 ## Документация
 
+- [Полный индекс документации](Docs/INDEX.md)
+- [Руководство пользователя и описание функций](Docs/USER_GUIDE.md)
 - [Отличия и преимущества](Docs/DIFFERENTIATORS.md)
-- [Приватность](Docs/PRIVACY.md)
+- [Безопасность, приватность и разрешения](Docs/PRIVACY.md)
 - [Ручная проверка](Docs/MANUAL_TESTS.md)
 - [Архитектура](Docs/ARCHITECTURE.md)
+- [Стек и руководство разработчика](Docs/DEVELOPMENT.md)
 - [Статус реализации](Docs/IMPLEMENTATION_STATUS.md)
 - [Бэклог](Docs/BACKLOG.md)

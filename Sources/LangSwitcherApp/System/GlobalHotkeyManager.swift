@@ -35,14 +35,10 @@ final class GlobalHotkeyManager {
             &manualRef
         )
 
-        var selectionModifiers = choice.carbonModifiers | UInt32(cmdKey)
-        if choice.carbonModifiers & UInt32(cmdKey) != 0 {
-            selectionModifiers |= UInt32(controlKey)
-        }
         let selectionID = EventHotKeyID(signature: signature, id: 2)
         RegisterEventHotKey(
             UInt32(kVK_Space),
-            selectionModifiers,
+            choice.selectionCarbonModifiers,
             selectionID,
             GetApplicationEventTarget(),
             0,

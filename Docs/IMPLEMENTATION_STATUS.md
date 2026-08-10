@@ -18,6 +18,7 @@
 - строгий профиль IDE без глобального запрета редакторов;
 - hard deny для password managers, Secure Input и AX secure fields;
 - запуск при входе через `SMAppService`;
+- четыре совместимых пресета хоткея, включая `Option+Space`, и производный хоткей выделения;
 - звук, локальный overlay и приватная диагностика;
 - встроенный self-test, отдельные Swift Testing-тесты и privacy source check;
 - ad-hoc подписанная `.app` и скрипт создания `.dmg`.

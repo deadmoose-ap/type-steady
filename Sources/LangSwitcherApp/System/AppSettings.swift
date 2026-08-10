@@ -28,14 +28,17 @@ enum DetectionAggressiveness: Int, CaseIterable, Identifiable {
 }
 
 enum HotkeyChoice: Int, CaseIterable, Identifiable {
-    case controlOptionSpace
-    case controlShiftSpace
-    case commandOptionSpace
+    // Explicit raw values preserve already stored choices when new presets are added.
+    case optionSpace = 3
+    case controlOptionSpace = 0
+    case controlShiftSpace = 1
+    case commandOptionSpace = 2
 
     var id: Int { rawValue }
 
     var title: String {
         switch self {
+        case .optionSpace: return "⌥Space"
         case .controlOptionSpace: return "⌃⌥Space"
         case .controlShiftSpace: return "⌃⇧Space"
         case .commandOptionSpace: return "⌘⌥Space"
@@ -44,9 +47,26 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
 
     var carbonModifiers: UInt32 {
         switch self {
+        case .optionSpace: return UInt32(optionKey)
         case .controlOptionSpace: return UInt32(controlKey | optionKey)
         case .controlShiftSpace: return UInt32(controlKey | shiftKey)
         case .commandOptionSpace: return UInt32(cmdKey | optionKey)
+        }
+    }
+
+    var selectionCarbonModifiers: UInt32 {
+        if carbonModifiers & UInt32(cmdKey) != 0 {
+            return carbonModifiers | UInt32(controlKey)
+        }
+        return carbonModifiers | UInt32(cmdKey)
+    }
+
+    var selectionTitle: String {
+        switch self {
+        case .optionSpace: return "⌘⌥Space"
+        case .controlOptionSpace: return "⌘⌃⌥Space"
+        case .controlShiftSpace: return "⌘⌃⇧Space"
+        case .commandOptionSpace: return "⌘⌃⌥Space"
         }
     }
 }
