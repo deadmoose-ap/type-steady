@@ -3,26 +3,28 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Lang Switcher</string>
+    <string>TypeSteady</string>
     <key>CFBundleExecutable</key>
-    <string>LangSwitcher</string>
+    <string>TypeSteady</string>
     <key>CFBundleIdentifier</key>
-    <string>local.lang-switcher.app</string>
+    <string>local.typesteady.app</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Lang Switcher</string>
+    <string>TypeSteady</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.1.3</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>4</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Local application</string>
+    <string>© 2026 Aleksei Panin. All rights reserved.</string>
 </dict>
 </plist>

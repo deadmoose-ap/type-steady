@@ -2,7 +2,7 @@
 
 ## Краткая гарантия
 
-Lang Switcher обрабатывает клавиатурный ввод внутри локального процесса. В проекте нет сетевого клиента, updater, телеметрии, рекламы, аналитического SDK или crash uploader. Clipboard не читается и не изменяется.
+TypeSteady обрабатывает клавиатурный ввод внутри локального процесса. В проекте нет сетевого клиента, updater, телеметрии, рекламы, аналитического SDK или crash uploader. Clipboard не читается и не изменяется.
 
 При этом приложение технически получает чувствительные системные разрешения. Этот документ объясняет, что именно оно видит, зачем это необходимо и какие остаются ограничения.
 
@@ -92,7 +92,7 @@ macOS и используемые системные framework являются 
 
 Без этого разрешения автоматическое и ручное исправление последнего слова не работают. Menu bar и настройки остаются доступны.
 
-Lang Switcher не сохраняет поток событий. Event callback передаёт только текущий компактный snapshot в state machine.
+TypeSteady не сохраняет поток событий. Event callback передаёт только текущий компактный snapshot в state machine.
 
 ### Accessibility
 
@@ -111,13 +111,13 @@ Lang Switcher не сохраняет поток событий. Event callback 
 
 ### Login Items
 
-При включении «Запускать при входе» используется `SMAppService.mainApp`. macOS может показать Lang Switcher в **General → Login Items** и запросить отдельное подтверждение.
+При включении «Запускать при входе» используется `SMAppService.mainApp`. macOS может показать TypeSteady в **General → Login Items** и запросить отдельное подтверждение.
 
 Это разрешение даёт только запуск приложения после входа пользователя. Оно не даёт доступа к файлам, сети или другим учётным записям.
 
 ### Не требуются
 
-Lang Switcher не запрашивает:
+TypeSteady не запрашивает:
 
 - Full Disk Access;
 - Screen Recording;
@@ -169,7 +169,7 @@ App Sandbox намеренно не включён: глобальный event t
 
 ## Системные crash reports
 
-macOS может локально создавать crash report процесса. Lang Switcher:
+macOS может локально создавать crash report процесса. TypeSteady:
 
 - не устанавливает crash reporter;
 - не читает системные crash reports;
@@ -178,12 +178,12 @@ macOS может локально создавать crash report процесс
 
 ## Отзыв разрешений и удаление
 
-1. Выключить Lang Switcher в menu bar.
+1. Выключить TypeSteady в menu bar.
 2. Отключить запуск при входе в настройках либо System Settings.
-3. Удалить Lang Switcher из Accessibility и Input Monitoring.
+3. Удалить TypeSteady из Accessibility и Input Monitoring.
 4. Завершить приложение.
 5. Удалить `.app`.
-6. При необходимости удалить preferences домена `local.lang-switcher.app` штатными средствами macOS или командой `defaults delete local.lang-switcher.app`.
+6. При необходимости удалить preferences домена `local.typesteady.app` штатными средствами macOS или командой `defaults delete local.typesteady.app`.
 
 Удаление preferences уничтожит пользовательские исключения и все настройки.
 

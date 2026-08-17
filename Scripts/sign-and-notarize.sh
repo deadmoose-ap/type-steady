@@ -2,8 +2,8 @@
 set -euo pipefail
 
 PROJECT_ROOT="${0:A:h:h}"
-APP_PATH="$PROJECT_ROOT/dist/Lang Switcher.app"
-DMG_PATH="$PROJECT_ROOT/dist/Lang-Switcher-0.1.0-arm64.dmg"
+APP_PATH="$PROJECT_ROOT/dist/TypeSteady.app"
+DMG_PATH="$PROJECT_ROOT/dist/TypeSteady-0.1.3-arm64.dmg"
 
 if [[ -z "${DEVELOPER_ID_APPLICATION:-}" || -z "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
     echo "Set DEVELOPER_ID_APPLICATION and NOTARY_KEYCHAIN_PROFILE first." >&2
@@ -12,7 +12,7 @@ fi
 
 "$PROJECT_ROOT/Scripts/build-app.sh"
 codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID_APPLICATION" \
-    --entitlements "$PROJECT_ROOT/Support/LangSwitcher.entitlements" "$APP_PATH"
+    --entitlements "$PROJECT_ROOT/Support/TypeSteady.entitlements" "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
 
 SKIP_APP_BUILD=1 "$PROJECT_ROOT/Scripts/package-dmg.sh"

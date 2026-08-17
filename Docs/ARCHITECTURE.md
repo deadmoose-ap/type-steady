@@ -1,4 +1,4 @@
-# Архитектура Lang Switcher
+# Архитектура TypeSteady
 
 Документ описывает фактически реализованную архитектуру версии 0.1.x. Приложение является нативным menu bar process для Apple Silicon и macOS 15+.
 
@@ -68,7 +68,7 @@ UI, TIS, Accessibility и принятие решений выполняются
 
 Обычное событие немедленно пропускается дальше. На main queue передаётся только компактный `InputEventSnapshot`: тип, key code, flags, repeat-флаг и monotonic timestamp.
 
-Синтетические события помечаются числом `langSwitcherEventMarker` в `eventSourceUserData`. Callback пропускает их, но не отправляет обратно в анализатор. Это предотвращает рекурсивные коррекции.
+Синтетические события помечаются числом `typeSteadyEventMarker` в `eventSourceUserData`. Callback пропускает их, но не отправляет обратно в анализатор. Это предотвращает рекурсивные коррекции.
 
 Если macOS отключает tap по timeout или user input, сервис повторно включает его и пишет обезличенное диагностическое событие.
 
@@ -138,7 +138,7 @@ State machine временно сохраняет такую клавишу ка
 Перед оценкой применяются жёсткие guards:
 
 - password manager или исключённый bundle identifier;
-- пользовательское «никогда не исправлять»;
+- пользовательское «никогда не исправлять» через нормализованный `UserTermRules`; для многословного термина защищается каждый токен, поскольку решение принимается до завершения всей фразы;
 - URL, email, путь, `snake_case`, `camelCase`, буквы вместе с цифрами;
 - известные технические слова в строгом IDE-профиле.
 
@@ -207,7 +207,7 @@ Unicode передаётся блоками максимум по 20 UTF-16 code
 ## UI и системные сервисы
 
 - `StatusBarController` — menu bar и быстрые действия.
-- `SettingsView` — SwiftUI-формы поверх `NSHostingController`.
+- `SettingsView` — двухколоночная SwiftUI-навигация поверх `NSHostingController`: системный sidebar отделяет навигацию от прокручиваемого содержимого настроек.
 - `FeedbackPresenter` — неактивирующий `NSPanel` и системный звук.
 - `GlobalHotkeyManager` — Carbon `RegisterEventHotKey`.
 - `PermissionManager` — проверка и запрос Input Monitoring/Accessibility.
@@ -215,6 +215,12 @@ Unicode передаётся блоками максимум по 20 UTF-16 code
 - `DiagnosticLogger` — строго типизированные события Unified Logging без текста.
 
 `AppSettings` использует `ObservableObject`, `@Published` и `UserDefaults`. Изменения публикуются через внутреннее notification, после чего AppDelegate обновляет hotkeys, menu bar и event tap.
+
+### Liquid Glass и совместимость UI
+
+Окно настроек использует единый прозрачный titlebar AppKit и `NavigationSplitView`. На macOS 26 и новее SwiftUI применяет нативный Liquid Glass к системному sidebar, а функциональная master-панель и action-кнопки явно используют `glassEffect`, `.glass` и `.glassProminent`. Стекло остаётся слоем навигации и управления; текстовые формы находятся на спокойной системной подложке.
+
+Deployment target остаётся macOS 15. Для macOS 15–25 те же компоненты автоматически переходят на `Material`, `.bordered` и `.borderedProminent` через availability branches. Это не имитация refraction и не набор заранее отрисованных градиентов: обе ветки используют системные материалы и учитывают Reduce Transparency, Increase Contrast, active/inactive window и appearance macOS.
 
 ## Границы модулей
 

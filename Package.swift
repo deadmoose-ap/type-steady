@@ -3,17 +3,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "LangSwitcher",
+    name: "TypeSteady",
     platforms: [
         .macOS(.v15)
     ],
     products: [
-        .executable(name: "LangSwitcher", targets: ["LangSwitcherApp"])
+        .executable(name: "TypeSteady", targets: ["TypeSteadyApp"])
     ],
     targets: [
         .executableTarget(
-            name: "LangSwitcherApp",
-            path: "Sources/LangSwitcherApp",
+            name: "TypeSteadyApp",
+            path: "Sources/TypeSteadyApp",
             resources: [
                 .process("Resources")
             ],
@@ -29,9 +29,9 @@ let package = Package(
             ]
         ),
         .testTarget(
-            name: "LangSwitcherAppTests",
-            dependencies: ["LangSwitcherApp"],
-            path: "Tests/LangSwitcherAppTests",
+            name: "TypeSteadyAppTests",
+            dependencies: ["TypeSteadyApp"],
+            path: "Tests/TypeSteadyAppTests",
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ]

@@ -1,6 +1,8 @@
-# Lang Switcher
+# TypeSteady
 
 Локальный нативный переключатель English ↔ Russian для Apple Silicon и macOS 15+.
+
+Разработчик: **Aleksei Panin**.
 
 Возможности текущей версии:
 
@@ -22,7 +24,7 @@
 
 ```bash
 ./Scripts/verify.sh
-open "dist/Lang Switcher.app"
+open "dist/TypeSteady.app"
 ```
 
 При первом запуске выдайте приложению разрешения Accessibility и Input Monitoring. Для локально подписанной сборки после пересборки macOS иногда запрашивает их повторно.
@@ -37,7 +39,7 @@ open "dist/Lang Switcher.app"
 ## Сборка
 
 ```bash
-swift run --disable-sandbox LangSwitcher --self-test
+swift run --disable-sandbox TypeSteady --self-test
 ./Scripts/build-app.sh
 ./Scripts/package-dmg.sh
 ```
@@ -57,5 +59,6 @@ swift run --disable-sandbox LangSwitcher --self-test
 - [Ручная проверка](Docs/MANUAL_TESTS.md)
 - [Архитектура](Docs/ARCHITECTURE.md)
 - [Стек и руководство разработчика](Docs/DEVELOPMENT.md)
+- [Иконка приложения и Apple HIG](Docs/APP_ICON.md)
 - [Статус реализации](Docs/IMPLEMENTATION_STATUS.md)
 - [Бэклог](Docs/BACKLOG.md)

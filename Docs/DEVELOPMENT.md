@@ -8,7 +8,7 @@
 | Language mode | Swift 5 compatibility mode в текущем package |
 | Минимальная ОС | macOS 15.0 |
 | Архитектура | arm64 / Apple Silicon |
-| UI | SwiftUI внутри AppKit lifecycle |
+| UI | SwiftUI `NavigationSplitView` внутри AppKit lifecycle; Liquid Glass на macOS 26+ |
 | Menu bar и окна | AppKit, `NSStatusItem`, `NSWindow`, `NSPanel`, `NSHostingController` |
 | Наблюдаемое состояние | Combine, `ObservableObject`, `@Published` |
 | Глобальный ввод | CoreGraphics `CGEventTap`, `CGEventPost` |
@@ -22,13 +22,15 @@
 
 Сторонних Swift packages и runtime SDK нет.
 
+Окно настроек сохраняет deployment target macOS 15. API `glassEffect`, `.glass` и `.glassProminent` должны оставаться внутри `if #available(macOS 26.0, *)`; fallback использует только системные материалы macOS 15. В содержимом настроек не следует создавать декоративное «стекло» из ручных blur/gradient/shadow: стеклянный слой предназначен для навигации и интерактивных controls.
+
 `swift-tools-version` равен 6.0, а targets пока используют `.swiftLanguageMode(.v5)`. Это оставляет доступным современный compiler/tooling, но снижает объём concurrency-миграции вокруг C callbacks и AppKit delegates. Переход на полный Swift 6 strict concurrency должен выполняться отдельным изменением с проверкой event tap ownership.
 
 ## Структура проекта
 
 ```text
 Package.swift
-Sources/LangSwitcherApp/
+Sources/TypeSteadyApp/
   Accessibility/   AX selected text и secure element
   Core/            модели и автономный self-test
   Correction/      транзакция замены и CGEvent emitter
@@ -98,7 +100,7 @@ Docs/               продуктовая и техническая докум�
 
 Скрипт выполняет:
 
-1. `swift run LangSwitcher --self-test`;
+1. `swift run TypeSteady --self-test`;
 2. privacy source check;
 3. release arm64 build;
 4. сборку `.app`;
@@ -111,13 +113,13 @@ Docs/               продуктовая и техническая докум�
 ./Scripts/build-app.sh
 ```
 
-Результат: `dist/Lang Switcher.app`.
+Результат: `dist/TypeSteady.app`.
 
 ### DMG
 
 ```bash
 ./Scripts/package-dmg.sh
-hdiutil verify dist/Lang-Switcher-0.1.0-arm64.dmg
+hdiutil verify dist/TypeSteady-0.1.3-arm64.dmg
 ```
 
 В некоторых sandboxed automation environments `hdiutil` требует запуск вне sandbox, поскольку создаёт виртуальное устройство.
@@ -135,7 +137,7 @@ hdiutil verify dist/Lang-Switcher-0.1.0-arm64.dmg
 ### Встроенный self-test
 
 ```bash
-swift run --disable-sandbox LangSwitcher --self-test
+swift run --disable-sandbox TypeSteady --self-test
 ```
 
 Он не требует TCC и проверяет:
@@ -152,7 +154,7 @@ swift run --disable-sandbox LangSwitcher --self-test
 
 ### Swift Testing
 
-Каталог `Tests/LangSwitcherAppTests` содержит более гранулярные тесты. Они запускаются командой:
+Каталог `Tests/TypeSteadyAppTests` содержит более гранулярные тесты. Они запускаются командой:
 
 ```bash
 swift test --disable-sandbox
@@ -233,7 +235,7 @@ TCC и межпроцессное поведение нельзя достове
 - `DMG_PATH` в scripts;
 - статус документации.
 
-Bundle identifier `local.lang-switcher.app` должен оставаться стабильным, иначе TCC будет воспринимать приложение как новое.
+Bundle identifier `local.typesteady.app` должен оставаться стабильным, иначе TCC будет воспринимать приложение как новое.
 
 ## Подпись и нотарификация
 
