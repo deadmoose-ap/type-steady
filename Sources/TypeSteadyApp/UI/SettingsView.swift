@@ -57,8 +57,8 @@ struct SettingsView: View {
         } detail: {
             detail
         }
-        .navigationTitle("TypeSteady")
         .navigationSplitViewStyle(.balanced)
+        .background(WindowMaterialBackground().ignoresSafeArea())
         .frame(minWidth: 780, minHeight: 560)
     }
 
@@ -95,10 +95,10 @@ struct SettingsView: View {
             }
             .frame(maxWidth: 720, alignment: .topLeading)
             .padding(.horizontal, 28)
-            .padding(.top, 24)
+            .padding(.top, 28)
             .padding(.bottom, 32)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(WindowMaterialBackground().ignoresSafeArea())
         .accessibilityIdentifier("settings.detail.\(destination.rawValue)")
     }
 
@@ -161,13 +161,14 @@ struct SettingsView: View {
 
             SettingsCard(title: "Горячие клавиши", systemImage: "keyboard") {
                 LabeledContent("Последнее слово") {
-                    Picker("Последнее слово", selection: $settings.manualHotkey) {
-                        ForEach(HotkeyChoice.allCases) { choice in
-                            Text(choice.title).tag(choice)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 165)
+                    AdaptiveGlassPicker(
+                        title: "Последнее слово",
+                        selection: $settings.manualHotkey,
+                        options: HotkeyChoice.allCases.map {
+                            SettingsSelectionOption(value: $0, title: $0.title)
+                        },
+                        width: 165
+                    )
                 }
                 SettingsDivider()
                 NoteText("Преобразование выделения: \(settings.manualHotkey.selectionTitle). К базовой комбинации добавляется Command, а при конфликте — Control.")
@@ -222,6 +223,8 @@ struct SettingsView: View {
 
                 Toggle("TypeSteady включён", isOn: $settings.isEnabled)
                     .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.large)
                     .accessibilityIdentifier("settings.masterToggle")
             }
         }
@@ -231,23 +234,25 @@ struct SettingsView: View {
         VStack(spacing: 16) {
             SettingsCard(title: "Пара раскладок", systemImage: "character.book.closed") {
                 LabeledContent("English") {
-                    Picker("English", selection: $settings.englishLayoutID) {
-                        ForEach(layouts.descriptors.filter { $0.languageCode == .english }) {
-                            Text($0.name).tag($0.id)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 260)
+                    AdaptiveGlassPicker(
+                        title: "English",
+                        selection: $settings.englishLayoutID,
+                        options: layouts.descriptors
+                            .filter { $0.languageCode == .english }
+                            .map { SettingsSelectionOption(value: $0.id, title: $0.name) },
+                        width: 260
+                    )
                 }
                 SettingsDivider()
                 LabeledContent("Русская") {
-                    Picker("Русская", selection: $settings.russianLayoutID) {
-                        ForEach(layouts.descriptors.filter { $0.languageCode == .russian }) {
-                            Text($0.name).tag($0.id)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 260)
+                    AdaptiveGlassPicker(
+                        title: "Русская",
+                        selection: $settings.russianLayoutID,
+                        options: layouts.descriptors
+                            .filter { $0.languageCode == .russian }
+                            .map { SettingsSelectionOption(value: $0.id, title: $0.name) },
+                        width: 260
+                    )
                 }
                 SettingsDivider()
                 HStack {
@@ -271,13 +276,14 @@ struct SettingsView: View {
         VStack(spacing: 16) {
             SettingsCard(title: "Автоматическое решение", systemImage: "scope") {
                 LabeledContent("Режим") {
-                    Picker("Режим", selection: $settings.aggressiveness) {
-                        ForEach(DetectionAggressiveness.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 220)
+                    AdaptiveGlassPicker(
+                        title: "Режим",
+                        selection: $settings.aggressiveness,
+                        options: DetectionAggressiveness.allCases.map {
+                            SettingsSelectionOption(value: $0, title: $0.title)
+                        },
+                        width: 220
+                    )
                 }
                 SettingsDivider()
                 SettingToggleRow(
@@ -438,7 +444,14 @@ private struct SettingsCard<Content: View>: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+            shape
+                .fill(.thinMaterial)
+                .overlay {
+                    shape.fill(Color(nsColor: .controlBackgroundColor).opacity(0.32))
+                }
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color(nsColor: .separatorColor).opacity(0.35), lineWidth: 0.5)
@@ -464,6 +477,8 @@ private struct SettingToggleRow: View {
             Spacer(minLength: 18)
             Toggle(title, isOn: $isOn)
                 .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.regular)
         }
     }
 }
@@ -481,7 +496,7 @@ private struct RulesEditor: View {
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .frame(minHeight: minHeight)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(Color(nsColor: .textBackgroundColor).opacity(0.84), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
@@ -523,6 +538,70 @@ private struct StatusMessage: View {
 private struct SettingsDivider: View {
     var body: some View {
         Divider().opacity(0.65)
+    }
+}
+
+private struct WindowMaterialBackground: View {
+    var body: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .overlay(Color(nsColor: .windowBackgroundColor).opacity(0.2))
+    }
+}
+
+private struct SettingsSelectionOption<Value: Hashable>: Identifiable {
+    let value: Value
+    let title: String
+
+    var id: Value { value }
+}
+
+private struct AdaptiveGlassPicker<Value: Hashable>: View {
+    let title: String
+    @Binding var selection: Value
+    let options: [SettingsSelectionOption<Value>]
+    let width: CGFloat
+
+    private var selectedTitle: String {
+        options.first(where: { $0.value == selection })?.title ?? "—"
+    }
+
+    var body: some View {
+        if #available(macOS 26.0, *) {
+            menu
+                .menuStyle(.button)
+                .buttonStyle(.glass)
+                .controlSize(.regular)
+                .frame(width: width)
+        } else {
+            menu
+                .menuStyle(.button)
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .frame(width: width)
+        }
+    }
+
+    private var menu: some View {
+        Menu {
+            ForEach(options) { option in
+                Button {
+                    selection = option.value
+                } label: {
+                    if selection == option.value {
+                        Label(option.title, systemImage: "checkmark")
+                    } else {
+                        Text(option.title)
+                    }
+                }
+            }
+        } label: {
+            Text(selectedTitle)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityLabel(title)
+        .accessibilityValue(selectedTitle)
     }
 }
 
@@ -604,8 +683,27 @@ private struct AdaptiveActionButton: View {
 final class SettingsWindowController: NSWindowController {
     init(rootView: SettingsView) {
         let hosting = NSHostingController(rootView: rootView)
-        let window = NSWindow(contentViewController: hosting)
+        let materialView = NSVisualEffectView()
+        let container = NSViewController()
+        let window: NSWindow
         let toolbar = NSToolbar(identifier: "TypeSteady.SettingsToolbar")
+
+        materialView.material = .underWindowBackground
+        materialView.blendingMode = .behindWindow
+        materialView.state = .followsWindowActiveState
+
+        container.view = materialView
+        container.addChild(hosting)
+        hosting.view.translatesAutoresizingMaskIntoConstraints = false
+        materialView.addSubview(hosting.view)
+        NSLayoutConstraint.activate([
+            hosting.view.leadingAnchor.constraint(equalTo: materialView.leadingAnchor),
+            hosting.view.trailingAnchor.constraint(equalTo: materialView.trailingAnchor),
+            hosting.view.topAnchor.constraint(equalTo: materialView.topAnchor),
+            hosting.view.bottomAnchor.constraint(equalTo: materialView.bottomAnchor)
+        ])
+
+        window = NSWindow(contentViewController: container)
 
         toolbar.allowsUserCustomization = false
         toolbar.displayMode = .iconOnly
@@ -617,6 +715,8 @@ final class SettingsWindowController: NSWindowController {
         window.toolbar = toolbar
         window.toolbarStyle = .unified
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.setContentSize(NSSize(width: 860, height: 620))
         window.minSize = NSSize(width: 780, height: 560)
         window.isMovableByWindowBackground = true

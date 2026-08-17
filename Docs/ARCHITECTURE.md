@@ -218,7 +218,7 @@ Unicode передаётся блоками максимум по 20 UTF-16 code
 
 ### Liquid Glass и совместимость UI
 
-Окно настроек использует единый прозрачный titlebar AppKit и `NavigationSplitView`. На macOS 26 и новее SwiftUI применяет нативный Liquid Glass к системному sidebar, а функциональная master-панель и action-кнопки явно используют `glassEffect`, `.glass` и `.glassProminent`. Стекло остаётся слоем навигации и управления; текстовые формы находятся на спокойной системной подложке.
+Окно настроек использует единый прозрачный titlebar AppKit, системный `NSVisualEffectView` в режиме `behindWindow` и `NavigationSplitView`. На macOS 26 и новее SwiftUI применяет нативный Liquid Glass к sidebar, функциональной master-панели, action-кнопкам и menu-selector controls. Логические параметры отображаются системными switch-тумблерами. Стекло остаётся слоем навигации и управления; текстовые формы находятся на более плотной системной подложке.
 
 Deployment target остаётся macOS 15. Для macOS 15–25 те же компоненты автоматически переходят на `Material`, `.bordered` и `.borderedProminent` через availability branches. Это не имитация refraction и не набор заранее отрисованных градиентов: обе ветки используют системные материалы и учитывают Reduce Transparency, Increase Contrast, active/inactive window и appearance macOS.
 
