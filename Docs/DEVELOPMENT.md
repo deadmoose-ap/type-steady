@@ -119,7 +119,7 @@ Docs/               продуктовая и техническая докум�
 
 ```bash
 ./Scripts/package-dmg.sh
-hdiutil verify dist/TypeSteady-0.1.4-arm64.dmg
+hdiutil verify dist/TypeSteady-0.1.5-arm64.dmg
 ```
 
 В некоторых sandboxed automation environments `hdiutil` требует запуск вне sandbox, поскольку создаёт виртуальное устройство.

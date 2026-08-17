@@ -21,7 +21,7 @@ Intel и macOS ниже 15 не поддерживаются.
 
 ## Установка локальной сборки
 
-1. Открыть `dist/TypeSteady-0.1.4-arm64.dmg`.
+1. Открыть `dist/TypeSteady-0.1.5-arm64.dmg`.
 2. Перетащить `TypeSteady.app` в `Applications`.
 3. Открыть приложение.
 4. Если Gatekeeper блокирует ad-hoc сборку, открыть **System Settings → Privacy & Security** и выбрать **Open Anyway**.

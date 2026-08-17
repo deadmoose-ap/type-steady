@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_ROOT="${0:A:h:h}"
 DIST_DIR="$PROJECT_ROOT/dist"
 STAGE_DIR="$DIST_DIR/dmg-stage"
-DMG_PATH="$DIST_DIR/TypeSteady-0.1.4-arm64.dmg"
+DMG_PATH="$DIST_DIR/TypeSteady-0.1.5-arm64.dmg"
 
 if [[ "${SKIP_APP_BUILD:-0}" != "1" ]]; then
     "$PROJECT_ROOT/Scripts/build-app.sh"
