@@ -50,6 +50,7 @@ struct SettingsView: View {
     let restartMonitor: () -> Void
 
     @State private var selection: SettingsDestination? = .general
+    @State private var showsPermissionRepairConfirmation = false
 
     var body: some View {
         NavigationSplitView {
@@ -60,6 +61,18 @@ struct SettingsView: View {
         .navigationSplitViewStyle(.balanced)
         .background(WindowMaterialBackground().ignoresSafeArea())
         .frame(minWidth: 780, minHeight: 560)
+        .confirmationDialog(
+            "Сбросить разрешения TypeSteady?",
+            isPresented: $showsPermissionRepairConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Сбросить и запросить заново", role: .destructive) {
+                permissions.repairStaleRecords()
+            }
+            Button("Отмена", role: .cancel) {}
+        } message: {
+            Text("Будут удалены только записи Accessibility и Input Monitoring для TypeSteady. После этого macOS попросит подтвердить их заново.")
+        }
     }
 
     private var sidebar: some View {
@@ -160,9 +173,9 @@ struct SettingsView: View {
             }
 
             SettingsCard(title: "Горячие клавиши", systemImage: "keyboard") {
-                LabeledContent("Последнее слово") {
+                LabeledContent("Действие с текстом") {
                     AdaptiveGlassPicker(
-                        title: "Последнее слово",
+                        title: "Действие с текстом",
                         selection: $settings.manualHotkey,
                         options: HotkeyChoice.allCases.map {
                             SettingsSelectionOption(value: $0, title: $0.title)
@@ -171,7 +184,7 @@ struct SettingsView: View {
                     )
                 }
                 SettingsDivider()
-                NoteText("Преобразование выделения: \(settings.manualHotkey.selectionTitle). К базовой комбинации добавляется Command, а при конфликте — Control.")
+                NoteText("\(settings.manualHotkey.title) преобразует выделенный текст. Если выделения нет — исправляет последнее слово или отменяет последнее исправление.")
             }
 
             SettingsCard(title: "Запуск", systemImage: "power") {
@@ -357,7 +370,7 @@ struct SettingsView: View {
                 )
                 SettingsDivider()
                 HStack {
-                    NoteText("После выдачи разрешения может потребоваться перезапуск монитора.")
+                    NoteText("macOS всегда требует ручного подтверждения. После него может потребоваться перезапуск монитора.")
                     Spacer()
                     AdaptiveActionButton(
                         title: "Проверить снова",
@@ -367,6 +380,25 @@ struct SettingsView: View {
                             restartMonitor()
                         }
                     )
+                }
+                if !permissions.accessibilityGranted || !permissions.inputMonitoringGranted {
+                    SettingsDivider()
+                    VStack(alignment: .leading, spacing: 10) {
+                        NoteText("Если TypeSteady уже включён в macOS, но здесь разрешение не распознано, запись относится к предыдущей тестовой сборке.")
+                        HStack {
+                            if let message = permissions.repairMessage {
+                                Text(message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            AdaptiveActionButton(
+                                title: "Исправить старые записи",
+                                systemImage: "wrench.and.screwdriver",
+                                action: { showsPermissionRepairConfirmation = true }
+                            )
+                        }
+                    }
                 }
             }
 
@@ -417,9 +449,9 @@ struct SettingsView: View {
 
             HStack(spacing: 8) {
                 if !granted {
-                    AdaptiveActionButton(title: "Запросить", prominent: true, action: request)
+                    AdaptiveActionButton(title: "Разрешить", prominent: true, action: request)
                 }
-                AdaptiveActionButton(title: "Настройки", systemImage: "arrow.up.forward.app", action: open)
+                AdaptiveActionButton(title: "Открыть настройки", systemImage: "arrow.up.forward.app", action: open)
             }
         }
     }

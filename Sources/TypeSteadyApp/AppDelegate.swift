@@ -58,8 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         hotkeys = GlobalHotkeyManager()
-        hotkeys.onCorrectLastWord = { [weak self] in self?.inputCoordinator.correctLastWord() }
-        hotkeys.onConvertSelection = { [weak self] in self?.inputCoordinator.convertSelection() }
+        hotkeys.onPerformTextAction = { [weak self] in self?.inputCoordinator.performHotkeyAction() }
 
         statusBar = StatusBarController(settings: settings)
         configureStatusBarCallbacks()

@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import Combine
+import CoreGraphics
 import Foundation
 
 enum DetectionAggressiveness: Int, CaseIterable, Identifiable {
@@ -54,20 +55,18 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
         }
     }
 
-    var selectionCarbonModifiers: UInt32 {
-        if carbonModifiers & UInt32(cmdKey) != 0 {
-            return carbonModifiers | UInt32(controlKey)
+    var eventFlags: CGEventFlags {
+        switch self {
+        case .optionSpace: return [.maskAlternate]
+        case .controlOptionSpace: return [.maskControl, .maskAlternate]
+        case .controlShiftSpace: return [.maskControl, .maskShift]
+        case .commandOptionSpace: return [.maskCommand, .maskAlternate]
         }
-        return carbonModifiers | UInt32(cmdKey)
     }
 
-    var selectionTitle: String {
-        switch self {
-        case .optionSpace: return "⌘⌥Space"
-        case .controlOptionSpace: return "⌘⌃⌥Space"
-        case .controlShiftSpace: return "⌘⌃⇧Space"
-        case .commandOptionSpace: return "⌘⌃⌥Space"
-        }
+    func matches(keyCode: UInt16, flags: CGEventFlags) -> Bool {
+        let modifiers = flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+        return keyCode == UInt16(kVK_Space) && modifiers == eventFlags
     }
 }
 

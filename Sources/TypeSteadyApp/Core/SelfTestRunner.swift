@@ -22,8 +22,8 @@ enum SelfTestRunner {
         check(LocalLexicon().contains("привет", language: .russian), "lexicon.bundle-resource")
         check(HotkeyChoice.optionSpace.carbonModifiers == UInt32(optionKey), "hotkey.option-space")
         check(
-            HotkeyChoice.optionSpace.selectionCarbonModifiers == UInt32(optionKey | cmdKey),
-            "hotkey.option-space-selection"
+            HotkeyChoice.optionSpace.matches(keyCode: UInt16(kVK_Space), flags: [.maskAlternate]),
+            "hotkey.option-space-event-match"
         )
         check(HotkeyChoice(rawValue: 0) == .controlOptionSpace, "hotkey.raw-value-0")
         check(HotkeyChoice(rawValue: 1) == .controlShiftSpace, "hotkey.raw-value-1")
@@ -83,7 +83,7 @@ enum SelfTestRunner {
         let selectedResult = SelectedTextConverter().convert("ghbdtn", english: englishLayout, russian: russianLayout)
         check(selectedResult?.text == "привет", "selection.dynamic-layout-map")
 
-        let lexicon = LocalLexicon(common: [.english: ["hello"], .russian: ["привет"]])
+        let lexicon = LocalLexicon(common: [.english: ["hello"], .russian: ["привет", "я"]])
         let detector = DetectionEngine(lexicon: lexicon, spellChecker: NullSpellChecker())
         let defaultsName = "TypeSteady.SelfTest.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: defaultsName)!
@@ -98,6 +98,15 @@ enum SelfTestRunner {
             settings: settings
         )
         check(proposal?.kind == .layout, "detection.layout")
+        let singleLetter = detector.proposal(
+            current: "z",
+            alternate: "я",
+            sourceLanguage: .english,
+            targetLanguage: .russian,
+            context: context,
+            settings: settings
+        )
+        check(singleLetter?.replacement == "я", "detection.single-letter")
         let kept = detector.proposal(
             current: "hello",
             alternate: "руддщ",

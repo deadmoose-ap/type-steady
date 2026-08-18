@@ -5,9 +5,9 @@ import Testing
 struct HotkeyChoiceTests {
     @Test func optionSpacePreset() {
         #expect(HotkeyChoice.optionSpace.carbonModifiers == UInt32(optionKey))
-        #expect(HotkeyChoice.optionSpace.selectionCarbonModifiers == UInt32(optionKey | cmdKey))
+        #expect(HotkeyChoice.optionSpace.eventFlags == [.maskAlternate])
         #expect(HotkeyChoice.optionSpace.title == "⌥Space")
-        #expect(HotkeyChoice.optionSpace.selectionTitle == "⌘⌥Space")
+        #expect(HotkeyChoice.optionSpace.matches(keyCode: UInt16(kVK_Space), flags: [.maskAlternate]))
     }
 
     @Test func storedRawValuesRemainStable() {
@@ -17,12 +17,23 @@ struct HotkeyChoiceTests {
         #expect(HotkeyChoice(rawValue: 3) == .optionSpace)
     }
 
-    @Test func everyPresetHasDistinctBaseAndDerivedSelectionShortcut() {
+    @Test func everyPresetMatchesOnlyItsExactShortcut() {
         for choice in HotkeyChoice.allCases {
-            #expect(choice.carbonModifiers != choice.selectionCarbonModifiers)
-            #expect(choice.selectionCarbonModifiers & UInt32(cmdKey) != 0)
             #expect(!choice.title.isEmpty)
-            #expect(!choice.selectionTitle.isEmpty)
+            #expect(choice.matches(keyCode: UInt16(kVK_Space), flags: choice.eventFlags))
+            #expect(!choice.matches(keyCode: UInt16(kVK_ANSI_A), flags: choice.eventFlags))
+            #expect(choice.matches(keyCode: UInt16(kVK_Space), flags: choice.eventFlags.union(.maskAlphaShift)))
+            for other in HotkeyChoice.allCases where other != choice {
+                #expect(!choice.matches(keyCode: UInt16(kVK_Space), flags: other.eventFlags))
+            }
         }
+    }
+
+    @Test func shiftPresetIncludesShiftInEventTapMatching() {
+        #expect(HotkeyChoice.controlShiftSpace.eventFlags == [.maskControl, .maskShift])
+        #expect(HotkeyChoice.controlShiftSpace.matches(
+            keyCode: UInt16(kVK_Space),
+            flags: [.maskControl, .maskShift]
+        ))
     }
 }

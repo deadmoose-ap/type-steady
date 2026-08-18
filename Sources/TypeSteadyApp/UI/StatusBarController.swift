@@ -10,15 +10,20 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onOpenSettings: (() -> Void)?
 
     private let settings: AppSettings
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let menu = NSMenu()
 
     init(settings: AppSettings) {
         self.settings = settings
         super.init()
-        statusItem.button?.title = "AЯ"
-        statusItem.button?.font = .systemFont(ofSize: 13, weight: .semibold)
-        statusItem.button?.toolTip = "TypeSteady"
+        if let button = statusItem.button {
+            button.title = ""
+            button.image = StatusBarIcon.makeTemplateImage()
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
+            button.toolTip = "TypeSteady"
+            button.setAccessibilityLabel("TypeSteady")
+        }
         menu.delegate = self
         statusItem.menu = menu
         rebuildMenu()

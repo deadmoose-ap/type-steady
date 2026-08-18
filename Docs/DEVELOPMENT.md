@@ -18,6 +18,7 @@
 | Системный словарь | AppKit `NSSpellChecker` |
 | Запуск при входе | ServiceManagement `SMAppService` |
 | Диагностика | OSLog Unified Logging |
+| Иконка | Apple Icon Composer `.icon`, `actool`, `Assets.car`, системный ICNS fallback |
 | Упаковка | shell, `codesign`, `hdiutil`, `notarytool` |
 
 Сторонних Swift packages и runtime SDK нет.
@@ -100,12 +101,15 @@ Docs/               продуктовая и техническая докум�
 
 Скрипт выполняет:
 
-1. `swift run TypeSteady --self-test`;
-2. privacy source check;
-3. release arm64 build;
-4. сборку `.app`;
-5. ad-hoc подпись с Hardened Runtime;
-6. `codesign --verify`.
+1. полный `swift test`;
+2. `swift run TypeSteady --self-test`;
+3. privacy source check;
+4. release arm64 build;
+5. сборку `.app`;
+6. ad-hoc подпись с Hardened Runtime;
+7. `codesign --verify`;
+8. проверку `Assets.car` на адаптивные `IconGroup`-слои;
+9. побайтовое сравнение системного ICNS fallback с упакованным `TypeSteady.icns`.
 
 ### Только приложение
 
@@ -119,7 +123,7 @@ Docs/               продуктовая и техническая докум�
 
 ```bash
 ./Scripts/package-dmg.sh
-hdiutil verify dist/TypeSteady-0.1.5-arm64.dmg
+hdiutil verify dist/TypeSteady-0.1.8-arm64.dmg
 ```
 
 В некоторых sandboxed automation environments `hdiutil` требует запуск вне sandbox, поскольку создаёт виртуальное устройство.
@@ -198,7 +202,7 @@ TCC и межпроцессное поведение нельзя достове
 
 1. Добавить `HotkeyChoice` с явным новым raw value.
 2. Не менять raw values существующих cases: они уже находятся в `UserDefaults`.
-3. Определить `title`, `carbonModifiers`, `selectionCarbonModifiers` и `selectionTitle`.
+3. Определить `title`, `carbonModifiers`, `eventFlags`; Carbon и event-tap представления должны описывать одну комбинацию.
 4. Добавить self-test и Swift Testing case.
 5. Проверить конфликт с системными shortcuts.
 
@@ -234,6 +238,8 @@ TCC и межпроцессное поведение нельзя достове
 - `CFBundleVersion`;
 - `DMG_PATH` в scripts;
 - статус документации.
+
+Для сборки иконки требуется установленный Xcode с Icon Composer. `build-app.sh` вызывает `actool` напрямую, поэтому отдельный `.xcodeproj` для SwiftPM-приложения не нужен.
 
 Bundle identifier `local.typesteady.app` должен оставаться стабильным, иначе TCC будет воспринимать приложение как новое.
 

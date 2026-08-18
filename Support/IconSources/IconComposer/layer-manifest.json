@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "canvas": {
+    "width": 1024,
+    "height": 1024,
+    "configureInIconComposer": true,
+    "backgroundColor": "#22272B",
+    "note": "Use a calm System Dark-style gradient only if it improves contrast; do not import an outer platform mask."
+  },
+  "groups": [
+    {
+      "name": "01 Semantic Masses",
+      "zIndex": 1,
+      "mode": "Combined",
+      "layers": [
+        "Layers/TypeSteady-10-coral.svg",
+        "Layers/TypeSteady-20-sand.svg"
+      ],
+      "materialIntent": "Same-plane coral and sand masses; restrained material, no independent double rims."
+    },
+    {
+      "name": "02 Switch Gesture",
+      "zIndex": 2,
+      "mode": "Combined",
+      "layers": [
+        "Layers/TypeSteady-30-switch.svg"
+      ],
+      "materialIntent": "Dominant turquoise glass gesture; subtle refraction, one coherent specular, compact neutral shadow."
+    }
+  ],
+  "sourceRules": [
+    "Flat opaque SVG artwork",
+    "No platform mask",
+    "No baked blur or drop shadow",
+    "No baked bevel or glow",
+    "No baked translucency, refraction, or specular highlight"
+  ]
+}

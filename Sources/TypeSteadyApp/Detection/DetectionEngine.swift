@@ -26,7 +26,7 @@ final class DetectionEngine {
     ) -> CorrectionProposal? {
         let normalizedCurrent = normalize(current)
         let normalizedAlternate = normalize(alternate)
-        guard normalizedCurrent.count >= 2,
+        guard !normalizedCurrent.isEmpty,
               normalizedCurrent != normalizedAlternate,
               !settings.neverCorrectRules.contains(current),
               !appPolicy.isHardDenied(bundleIdentifier: context.bundleIdentifier),

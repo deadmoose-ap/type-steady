@@ -31,6 +31,25 @@ struct DetectionEngineTests {
         #expect(proposal?.kind == .layout)
     }
 
+    @Test func detectsKnownSingleLetterWord() {
+        let lexicon = LocalLexicon(common: [
+            .english: [],
+            .russian: ["я"]
+        ])
+        let engine = DetectionEngine(lexicon: lexicon, spellChecker: NullSpellChecker())
+        let proposal = engine.proposal(
+            current: "z",
+            alternate: "я",
+            sourceLanguage: .english,
+            targetLanguage: .russian,
+            context: context,
+            settings: makeSettings()
+        )
+
+        #expect(proposal?.replacement == "я")
+        #expect(proposal?.kind == .layout)
+    }
+
     @Test func keepsKnownCurrentWord() {
         let lexicon = LocalLexicon(common: [
             .english: ["hello"],
@@ -201,11 +220,11 @@ struct DetectionEngineTests {
         #expect(proposal == nil)
     }
 
-    @Test func rejectsShortIdenticalAndStructuredTokens() {
+    @Test func rejectsKnownCurrentIdenticalAndStructuredTokens() {
         let settings = makeSettings()
-        settings.alwaysConvert = "a\nsame\nsome_value"
+        settings.alwaysConvert = "same\nsome_value"
         let engine = DetectionEngine(
-            lexicon: LocalLexicon(common: [.english: [], .russian: []]),
+            lexicon: LocalLexicon(common: [.english: ["a"], .russian: []]),
             spellChecker: NullSpellChecker()
         )
 

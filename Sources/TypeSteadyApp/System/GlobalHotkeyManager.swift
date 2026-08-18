@@ -2,12 +2,10 @@ import Carbon
 import Foundation
 
 final class GlobalHotkeyManager {
-    var onCorrectLastWord: (() -> Void)?
-    var onConvertSelection: (() -> Void)?
+    var onPerformTextAction: (() -> Void)?
 
     private var handlerRef: EventHandlerRef?
     private var manualRef: EventHotKeyRef?
-    private var selectionRef: EventHotKeyRef?
 
     func start(choice: HotkeyChoice) {
         stop()
@@ -35,23 +33,12 @@ final class GlobalHotkeyManager {
             &manualRef
         )
 
-        let selectionID = EventHotKeyID(signature: signature, id: 2)
-        RegisterEventHotKey(
-            UInt32(kVK_Space),
-            choice.selectionCarbonModifiers,
-            selectionID,
-            GetApplicationEventTarget(),
-            0,
-            &selectionRef
-        )
     }
 
     func stop() {
         if let manualRef { UnregisterEventHotKey(manualRef) }
-        if let selectionRef { UnregisterEventHotKey(selectionRef) }
         if let handlerRef { RemoveEventHandler(handlerRef) }
         manualRef = nil
-        selectionRef = nil
         handlerRef = nil
     }
 
@@ -70,9 +57,7 @@ final class GlobalHotkeyManager {
         guard status == noErr else { return status }
         DispatchQueue.main.async { [weak self] in
             if hotkeyID.id == 1 {
-                self?.onCorrectLastWord?()
-            } else if hotkeyID.id == 2 {
-                self?.onConvertSelection?()
+                self?.onPerformTextAction?()
             }
         }
         return noErr

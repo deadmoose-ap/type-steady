@@ -109,6 +109,8 @@ TypeSteady не сохраняет поток событий. Event callback п�
 
 Без Accessibility преобразование выделения и надёжная межпроцессная коррекция недоступны.
 
+TypeSteady не может выдать себе эти разрешения: кнопка «Разрешить» вызывает системный API Apple и открывает соответствующий раздел macOS, где решение всегда подтверждает пользователь.
+
 ### Login Items
 
 При включении «Запускать при входе» используется `SMAppService.mainApp`. macOS может показать TypeSteady в **General → Login Items** и запросить отдельное подтверждение.
@@ -166,6 +168,8 @@ App Sandbox намеренно не включён: глобальный event t
 - публичное распространение требует Developer ID Application, timestamp, notarization и stapling.
 
 Скрипт `Scripts/sign-and-notarize.sh` подготовлен для будущего сертификата.
+
+Для тестовых ad-hoc обновлений в интерфейсе есть подтверждаемая команда восстановления. Она запускает системный `/usr/bin/tccutil reset` только для сервисов `Accessibility` и `ListenEvent` и bundle identifier `local.typesteady.app`; чужие приложения и остальные разрешения не затрагиваются.
 
 ## Системные crash reports
 

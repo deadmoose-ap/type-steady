@@ -62,8 +62,8 @@ final class InputCoordinator {
             return
         }
 
-        let shortcutModifiers = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate])
-        let isSwitcherHotkey = event.keyCode == 49 && shortcutModifiers.rawValue.nonzeroBitCount >= 2
+        let shortcutModifiers = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+        let isSwitcherHotkey = settings.manualHotkey.matches(keyCode: event.keyCode, flags: event.flags)
         if correction.lastCorrection != nil && !isSwitcherHotkey {
             correction.clearUndo()
         }
@@ -157,42 +157,31 @@ final class InputCoordinator {
         }
     }
 
+    func performHotkeyAction() {
+        guard settings.isEnabled else { return }
+        guard settings.selectionConversion else {
+            correctLastWord()
+            return
+        }
+
+        do {
+            let selection = try accessibility.currentSelection()
+            convert(selection)
+        } catch AccessibilityTextError.noSelection,
+                AccessibilityTextError.noFocusedElement,
+                AccessibilityTextError.permissionMissing {
+            correctLastWord()
+        } catch {
+            logger.record(.selectionUnavailable)
+            onMessage?(error.localizedDescription)
+        }
+    }
+
     func convertSelection() {
         guard settings.isEnabled, settings.selectionConversion else { return }
         do {
             let selection = try accessibility.currentSelection()
-            guard !appPolicy.isHardDenied(bundleIdentifier: selection.context.bundleIdentifier),
-                  let pair = layoutCatalog.selectedPair(settings: settings),
-                  let conversion = selectedTextConverter.convert(
-                    selection.text,
-                    english: pair.english,
-                    russian: pair.russian
-                  ) else {
-                onMessage?("Выделение не требует преобразования")
-                return
-            }
-
-            let targetID = conversion.targetLanguage == .english
-                ? pair.english.descriptor.id
-                : pair.russian.descriptor.id
-            guard layoutCatalog.selectLayout(id: targetID) else {
-                onMessage?("Целевая раскладка недоступна")
-                return
-            }
-
-            let replacedDirectly = try accessibility.replace(selection, with: conversion.text)
-            let replaced = replacedDirectly || correction.replaceSelectionFallback(
-                conversion.text,
-                context: selection.context
-            )
-            if replaced {
-                logger.record(.selectionConverted, value: conversion.text.count)
-                onCorrection?(conversion.sourceLanguage, conversion.targetLanguage)
-                reset()
-            } else {
-                logger.record(.selectionUnavailable)
-                onMessage?("Это приложение не разрешает заменить выделение")
-            }
+            convert(selection)
         } catch {
             logger.record(.selectionUnavailable)
             onMessage?(error.localizedDescription)
@@ -241,6 +230,46 @@ final class InputCoordinator {
             state.markCorrectionApplied()
             manualCandidate = nil
             onCorrection?(best.1.sourceLanguage, best.1.targetLanguage)
+        }
+    }
+
+    private func convert(_ selection: AccessibilitySelection) {
+        guard !appPolicy.isHardDenied(bundleIdentifier: selection.context.bundleIdentifier),
+              let pair = layoutCatalog.selectedPair(settings: settings),
+              let conversion = selectedTextConverter.convert(
+                selection.text,
+                english: pair.english,
+                russian: pair.russian
+              ) else {
+            onMessage?("Выделение не требует преобразования")
+            return
+        }
+
+        let targetID = conversion.targetLanguage == .english
+            ? pair.english.descriptor.id
+            : pair.russian.descriptor.id
+        guard layoutCatalog.selectLayout(id: targetID) else {
+            onMessage?("Целевая раскладка недоступна")
+            return
+        }
+
+        do {
+            let replacedDirectly = try accessibility.replace(selection, with: conversion.text)
+            let replaced = replacedDirectly || correction.replaceSelectionFallback(
+                conversion.text,
+                context: selection.context
+            )
+            if replaced {
+                logger.record(.selectionConverted, value: conversion.text.count)
+                onCorrection?(conversion.sourceLanguage, conversion.targetLanguage)
+                reset()
+            } else {
+                logger.record(.selectionUnavailable)
+                onMessage?("Это приложение не разрешает заменить выделение")
+            }
+        } catch {
+            logger.record(.selectionUnavailable)
+            onMessage?(error.localizedDescription)
         }
     }
 

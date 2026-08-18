@@ -95,7 +95,7 @@ Gate закрывается атомарно только после опуст�
 - клике мышью;
 - смене приложения;
 - Enter, Tab, Escape, стрелках, Home/End, Forward Delete;
-- обычном Command/Control/Option shortcut;
+- обычном Command/Control/Option/Shift shortcut, не совпадающем с выбранным хоткеем TypeSteady;
 - неизвестной или неподдерживаемой раскладке;
 - Secure Input или защищённом поле.
 
@@ -204,13 +204,15 @@ Unicode передаётся блоками максимум по 20 UTF-16 code
 
 Если приложение не публикует выделение через Accessibility и Unicode fallback невозможен, показывается локальное сообщение. Clipboard fallback намеренно отсутствует.
 
+Глобально регистрируется одна выбранная комбинация. При её вызове координатор сначала ищет непустое AX-выделение и преобразует его; если выделения или доступного AX-элемента нет, применяется ручная коррекция последнего слова. Это сохраняет обе функции без производного хоткея с дополнительным Command.
+
 ## UI и системные сервисы
 
 - `StatusBarController` — menu bar и быстрые действия.
 - `SettingsView` — двухколоночная SwiftUI-навигация поверх `NSHostingController`: системный sidebar отделяет навигацию от прокручиваемого содержимого настроек.
 - `FeedbackPresenter` — неактивирующий `NSPanel` и системный звук.
 - `GlobalHotkeyManager` — Carbon `RegisterEventHotKey`.
-- `PermissionManager` — проверка и запрос Input Monitoring/Accessibility.
+- `PermissionManager` — проверка и системный запрос Input Monitoring/Accessibility, переходы по актуальным Privacy & Security URL и адресный сброс устаревших TCC-записей TypeSteady после подтверждения пользователя.
 - `LaunchAtLoginController` — `SMAppService.mainApp`.
 - `DiagnosticLogger` — строго типизированные события Unified Logging без текста.
 
