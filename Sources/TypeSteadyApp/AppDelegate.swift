@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: SettingsWindowController!
     private var observers: [NSObjectProtocol] = []
     private var lastHotkeyChoice: HotkeyChoice?
+    private var tapRecoveryWorkItem: DispatchWorkItem?
+    private var lastAutomaticTapRecoveryAt: TimeInterval = -.infinity
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         settings = AppSettings()
@@ -53,9 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         eventTap.onEvent = { [weak self] event in self?.inputCoordinator.handle(event) }
-        eventTap.onTapDisabled = { [weak self] in
-            self?.logger.record(.eventTapDisabled)
-        }
+        eventTap.onTapDisabled = { [weak self] reason in self?.handleTapDisabled(reason) }
 
         hotkeys = GlobalHotkeyManager()
         hotkeys.onPerformTextAction = { [weak self] in self?.inputCoordinator.performHotkeyAction() }
@@ -84,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        tapRecoveryWorkItem?.cancel()
         eventTap?.stop()
         hotkeys?.stop()
         observers.forEach(NotificationCenter.default.removeObserver)
@@ -155,11 +156,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func restartMonitor() {
+        tapRecoveryWorkItem?.cancel()
+        tapRecoveryWorkItem = nil
         eventTap.stop()
         permissions.refresh()
         if settings.isEnabled, !eventTap.start() {
             feedback.show("Разрешение Input Monitoring ещё не действует", sound: false, visual: true)
         }
+    }
+
+    private func handleTapDisabled(_ reason: InputEventTapDisableReason) {
+        logger.record(.eventTapDisabled)
+        eventTap.stop()
+        inputCoordinator.reset()
+        permissions.refresh()
+
+        guard reason == .timeout else {
+            feedback.show(
+                "Мониторинг остановлен после изменения разрешений",
+                sound: false,
+                visual: settings.visualFeedback
+            )
+            return
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        guard settings.isEnabled,
+              permissions.accessibilityGranted,
+              permissions.inputMonitoringGranted,
+              now - lastAutomaticTapRecoveryAt >= 15 else {
+            feedback.show(
+                "Мониторинг остановлен — нажмите «Проверить снова»",
+                sound: false,
+                visual: settings.visualFeedback
+            )
+            return
+        }
+
+        lastAutomaticTapRecoveryAt = now
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.permissions.refresh()
+            guard self.settings.isEnabled,
+                  self.permissions.accessibilityGranted,
+                  self.permissions.inputMonitoringGranted,
+                  self.eventTap.start() else {
+                self.feedback.show(
+                    "Мониторинг остановлен — проверьте разрешения",
+                    sound: false,
+                    visual: self.settings.visualFeedback
+                )
+                return
+            }
+            self.logger.record(.eventTapStarted)
+        }
+        tapRecoveryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75, execute: work)
     }
 
     private func refreshLayouts() {

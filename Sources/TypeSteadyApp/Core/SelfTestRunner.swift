@@ -28,6 +28,25 @@ enum SelfTestRunner {
         check(HotkeyChoice(rawValue: 0) == .controlOptionSpace, "hotkey.raw-value-0")
         check(HotkeyChoice(rawValue: 1) == .controlShiftSpace, "hotkey.raw-value-1")
         check(HotkeyChoice(rawValue: 2) == .commandOptionSpace, "hotkey.raw-value-2")
+        check(HotkeyChoice(rawValue: 4) == .optionOnly, "hotkey.raw-value-4")
+
+        var modifierHotkey = ModifierOnlyHotkeyRecognizer()
+        let optionDown = InputEventSnapshot(
+            type: .flagsChanged,
+            keyCode: UInt16(kVK_Option),
+            flags: [.maskAlternate],
+            isRepeat: false,
+            timestamp: 1
+        )
+        let optionUp = InputEventSnapshot(
+            type: .flagsChanged,
+            keyCode: UInt16(kVK_Option),
+            flags: [],
+            isRepeat: false,
+            timestamp: 2
+        )
+        check(!modifierHotkey.consume(optionDown, enabled: true), "hotkey.option-only-arm")
+        check(modifierHotkey.consume(optionUp, enabled: true), "hotkey.option-only-release")
 
         let emojiSource = String(repeating: "а", count: 19) + "🙂" + "б"
         let chunks = EventSynthesizer.chunkUTF16(emojiSource, maximumCodeUnits: 20)

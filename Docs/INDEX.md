@@ -1,6 +1,6 @@
 # Документация TypeSteady
 
-Разработчик: **Aleksei Panin**.
+Разработчик: **Aleksei Panin** — [GitHub](https://github.com/deadmoose-ap) · [LinkedIn](https://www.linkedin.com/in/aleksei-panin/).
 
 ## Пользователю
 

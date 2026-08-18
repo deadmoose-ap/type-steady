@@ -19,9 +19,37 @@ struct CapturedInputEvent: Sendable {
     let isRepeat: Bool
 }
 
+enum InputEventTapDisableReason: Equatable, Sendable {
+    case timeout
+    case permissionOrUserInput
+}
+
+struct InputEventTapDisablePolicy {
+    private var didNotify = false
+
+    mutating func notification(for type: CGEventType) -> InputEventTapDisableReason? {
+        let reason: InputEventTapDisableReason
+        switch type {
+        case .tapDisabledByTimeout:
+            reason = .timeout
+        case .tapDisabledByUserInput:
+            reason = .permissionOrUserInput
+        default:
+            return nil
+        }
+        guard !didNotify else { return nil }
+        didNotify = true
+        return reason
+    }
+
+    mutating func reset() {
+        didNotify = false
+    }
+}
+
 final class InputEventTap: @unchecked Sendable {
     var onEvent: ((InputEventSnapshot) -> Void)?
-    var onTapDisabled: (() -> Void)?
+    var onTapDisabled: ((InputEventTapDisableReason) -> Void)?
 
     private let lock = NSLock()
     private var tap: CFMachPort?
@@ -30,12 +58,14 @@ final class InputEventTap: @unchecked Sendable {
     private var thread: Thread?
     private var isGating = false
     private var capturedEvents: [CapturedInputEvent] = []
+    private var disablePolicy = InputEventTapDisablePolicy()
 
     @discardableResult
     func start() -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard tap == nil else { return true }
+        disablePolicy.reset()
 
         let mask: CGEventMask = [
             CGEventType.keyDown,
@@ -100,12 +130,13 @@ final class InputEventTap: @unchecked Sendable {
     }
 
     fileprivate func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            lock.lock()
-            let currentTap = tap
-            lock.unlock()
-            if let currentTap { CGEvent.tapEnable(tap: currentTap, enable: true) }
-            DispatchQueue.main.async { [weak self] in self?.onTapDisabled?() }
+        lock.lock()
+        let disableReason = disablePolicy.notification(for: type)
+        lock.unlock()
+        if let disableReason {
+            // Never re-enable from the event-tap callback. If TCC access was
+            // revoked, doing so creates an unbounded disable/enable loop.
+            DispatchQueue.main.async { [weak self] in self?.onTapDisabled?(disableReason) }
             return Unmanaged.passUnretained(event)
         }
 
@@ -124,7 +155,8 @@ final class InputEventTap: @unchecked Sendable {
         }
         lock.unlock()
 
-        guard type == .keyDown || type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown else {
+        guard type == .keyDown || type == .flagsChanged ||
+                type == .leftMouseDown || type == .rightMouseDown || type == .otherMouseDown else {
             return Unmanaged.passUnretained(event)
         }
 

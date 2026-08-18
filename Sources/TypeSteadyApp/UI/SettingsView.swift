@@ -91,6 +91,12 @@ struct SettingsView: View {
                 Text("Aleksei Panin")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    Link("GitHub", destination: URL(string: "https://github.com/deadmoose-ap")!)
+                    Text("·").foregroundStyle(.tertiary)
+                    Link("LinkedIn", destination: URL(string: "https://www.linkedin.com/in/aleksei-panin/")!)
+                }
+                .font(.caption2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)
@@ -184,7 +190,7 @@ struct SettingsView: View {
                     )
                 }
                 SettingsDivider()
-                NoteText("\(settings.manualHotkey.title) преобразует выделенный текст. Если выделения нет — исправляет последнее слово или отменяет последнее исправление.")
+                NoteText("\(settings.manualHotkey.title) преобразует выделенный текст. Если выделения нет — исправляет последнее слово или отменяет последнее исправление. Вариант «⌥ Option» срабатывает после отпускания Option, только если вместе с ним не нажималась другая клавиша.")
             }
 
             SettingsCard(title: "Запуск", systemImage: "power") {
@@ -429,17 +435,11 @@ struct SettingsView: View {
                 .font(.title3)
                 .foregroundStyle(granted ? Color.green : Color.orange)
                 .frame(width: 24)
+                .accessibilityLabel("\(title): \(granted ? "разрешено" : "требуется")")
+                .help(granted ? "Разрешено" : "Требуется")
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) {
-                    Text(title).fontWeight(.medium)
-                    Text(granted ? "Разрешено" : "Требуется")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(granted ? Color.green : Color.orange)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background((granted ? Color.green : Color.orange).opacity(0.12), in: Capsule())
-                }
+                Text(title).fontWeight(.medium)
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)

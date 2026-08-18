@@ -15,18 +15,29 @@ struct HotkeyChoiceTests {
         #expect(HotkeyChoice(rawValue: 1) == .controlShiftSpace)
         #expect(HotkeyChoice(rawValue: 2) == .commandOptionSpace)
         #expect(HotkeyChoice(rawValue: 3) == .optionSpace)
+        #expect(HotkeyChoice(rawValue: 4) == .optionOnly)
     }
 
     @Test func everyPresetMatchesOnlyItsExactShortcut() {
         for choice in HotkeyChoice.allCases {
             #expect(!choice.title.isEmpty)
+            guard choice.carbonKeyCode != nil else {
+                #expect(!choice.matches(keyCode: UInt16(kVK_Space), flags: choice.eventFlags))
+                continue
+            }
             #expect(choice.matches(keyCode: UInt16(kVK_Space), flags: choice.eventFlags))
             #expect(!choice.matches(keyCode: UInt16(kVK_ANSI_A), flags: choice.eventFlags))
             #expect(choice.matches(keyCode: UInt16(kVK_Space), flags: choice.eventFlags.union(.maskAlphaShift)))
-            for other in HotkeyChoice.allCases where other != choice {
+            for other in HotkeyChoice.allCases where other != choice && other.carbonKeyCode != nil && other.eventFlags != choice.eventFlags {
                 #expect(!choice.matches(keyCode: UInt16(kVK_Space), flags: other.eventFlags))
             }
         }
+    }
+
+    @Test func optionOnlyUsesEventTapInsteadOfInvalidCarbonRegistration() {
+        #expect(HotkeyChoice.optionOnly.title == "⌥ Option")
+        #expect(HotkeyChoice.optionOnly.carbonKeyCode == nil)
+        #expect(HotkeyChoice.optionOnly.eventFlags == [.maskAlternate])
     }
 
     @Test func shiftPresetIncludesShiftInEventTapMatching() {

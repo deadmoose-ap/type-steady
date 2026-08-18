@@ -30,6 +30,7 @@ enum DetectionAggressiveness: Int, CaseIterable, Identifiable {
 
 enum HotkeyChoice: Int, CaseIterable, Identifiable {
     // Explicit raw values preserve already stored choices when new presets are added.
+    case optionOnly = 4
     case optionSpace = 3
     case controlOptionSpace = 0
     case controlShiftSpace = 1
@@ -39,6 +40,7 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .optionOnly: return "⌥ Option"
         case .optionSpace: return "⌥Space"
         case .controlOptionSpace: return "⌃⌥Space"
         case .controlShiftSpace: return "⌃⇧Space"
@@ -48,6 +50,7 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
 
     var carbonModifiers: UInt32 {
         switch self {
+        case .optionOnly: return UInt32(optionKey)
         case .optionSpace: return UInt32(optionKey)
         case .controlOptionSpace: return UInt32(controlKey | optionKey)
         case .controlShiftSpace: return UInt32(controlKey | shiftKey)
@@ -57,6 +60,7 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
 
     var eventFlags: CGEventFlags {
         switch self {
+        case .optionOnly: return [.maskAlternate]
         case .optionSpace: return [.maskAlternate]
         case .controlOptionSpace: return [.maskControl, .maskAlternate]
         case .controlShiftSpace: return [.maskControl, .maskShift]
@@ -64,9 +68,14 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
         }
     }
 
+    var carbonKeyCode: UInt32? {
+        self == .optionOnly ? nil : UInt32(kVK_Space)
+    }
+
     func matches(keyCode: UInt16, flags: CGEventFlags) -> Bool {
+        guard let carbonKeyCode else { return false }
         let modifiers = flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
-        return keyCode == UInt16(kVK_Space) && modifiers == eventFlags
+        return keyCode == UInt16(carbonKeyCode) && modifiers == eventFlags
     }
 }
 

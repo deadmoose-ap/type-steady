@@ -24,6 +24,7 @@ final class InputCoordinator {
     private let selectedTextConverter = SelectedTextConverter()
 
     private var state = TypingStateMachine()
+    private var modifierOnlyHotkey = ModifierOnlyHotkeyRecognizer()
     private var pendingFlush: DispatchWorkItem?
     private var manualCandidate: ManualCandidate?
 
@@ -44,6 +45,11 @@ final class InputCoordinator {
     }
 
     func handle(_ event: InputEventSnapshot) {
+        if modifierOnlyHotkey.consume(event, enabled: settings.manualHotkey == .optionOnly) {
+            performHotkeyAction()
+            return
+        }
+        if event.type == .flagsChanged { return }
         if event.type == .leftMouseDown || event.type == .rightMouseDown || event.type == .otherMouseDown {
             reset()
             return
@@ -189,6 +195,7 @@ final class InputCoordinator {
     }
 
     func reset() {
+        modifierOnlyHotkey.reset()
         pendingFlush?.cancel()
         pendingFlush = nil
         state.invalidate()

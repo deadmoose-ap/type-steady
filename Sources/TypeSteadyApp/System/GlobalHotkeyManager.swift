@@ -9,6 +9,7 @@ final class GlobalHotkeyManager {
 
     func start(choice: HotkeyChoice) {
         stop()
+        guard let keyCode = choice.carbonKeyCode else { return }
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
@@ -25,7 +26,7 @@ final class GlobalHotkeyManager {
         let signature: OSType = 0x4C535754
         let manualID = EventHotKeyID(signature: signature, id: 1)
         RegisterEventHotKey(
-            UInt32(kVK_Space),
+            keyCode,
             choice.carbonModifiers,
             manualID,
             GetApplicationEventTarget(),

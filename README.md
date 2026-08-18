@@ -2,7 +2,7 @@
 
 Локальный нативный переключатель English ↔ Russian для Apple Silicon и macOS 15+.
 
-Разработчик: **Aleksei Panin**.
+Разработчик: **Aleksei Panin** — [GitHub](https://github.com/deadmoose-ap) · [LinkedIn](https://www.linkedin.com/in/aleksei-panin/).
 
 Возможности текущей версии:
 
@@ -29,12 +29,7 @@ open "dist/TypeSteady.app"
 
 При первом запуске выдайте приложению разрешения Accessibility и Input Monitoring. Для локально подписанной сборки после пересборки macOS иногда запрашивает их повторно.
 
-Горячие клавиши по умолчанию:
-
-- Control+Option+Space — исправить последнее слово;
-- Control+Option+Command+Space — преобразовать выделение.
-
-В настройках также доступны `Option+Space`, `Control+Shift+Space` и `Command+Option+Space`. Комбинация для выделения показывается рядом и автоматически получает дополнительный Command либо Control.
+По умолчанию `Control+Option+Space` преобразует выделенный текст, а при отсутствии выделения исправляет последнее слово. В настройках также доступны чистый `Option`, `Option+Space`, `Control+Shift+Space` и `Command+Option+Space`.
 
 ## Сборка
 

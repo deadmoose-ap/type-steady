@@ -123,7 +123,7 @@ Docs/               продуктовая и техническая докум�
 
 ```bash
 ./Scripts/package-dmg.sh
-hdiutil verify dist/TypeSteady-0.1.8-arm64.dmg
+hdiutil verify dist/TypeSteady-0.1.9-arm64.dmg
 ```
 
 В некоторых sandboxed automation environments `hdiutil` требует запуск вне sandbox, поскольку создаёт виртуальное устройство.
@@ -149,6 +149,8 @@ swift run --disable-sandbox TypeSteady --self-test
 - transliteration и запрет mixed token;
 - загрузку bundle lexicon;
 - пресеты hotkeys и совместимость raw values;
+- modifier-only Option и отмену при chord/key input;
+- подавление повторных event-tap disable callbacks;
 - безопасную нарезку UTF-16;
 - границы state machine и Backspace reopen;
 - punctuation ambiguity;
@@ -224,6 +226,8 @@ TCC и межпроцессное поведение нельзя достове
 
 - Callback не должен обращаться к SwiftUI, NSSpellChecker, AX или TIS.
 - В callback нельзя ждать main queue, писать файл или выполнять scoring.
+- В callback запрещено повторно включать отключённый event tap. Решение о recovery принимает `AppDelegate` после проверки TCC, с задержкой и rate limit.
+- `.tapDisabledByUserInput` останавливает монитор до явной пользовательской проверки; автоматический recovery разрешён только для timeout.
 - Shared gate state защищается `NSLock`.
 - TIS/AX/AppKit остаются на `MainActor`.
 - Новое synthetic event обязательно получает marker.
