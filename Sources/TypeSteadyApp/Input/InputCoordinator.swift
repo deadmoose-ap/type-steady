@@ -150,7 +150,11 @@ final class InputCoordinator {
         }
     }
 
-    private func correctLastWord() {
+    /// A9: `fallbackMessage` переопределяет сообщение "Нет доступного последнего слова" для
+    /// случая, когда сюда пришли не из-за отсутствия выделения, а потому что AX-путь уже
+    /// отказал с .noSelection/.noFocusedElement — тогда реальная причина в том, что
+    /// приложение не публикует kAXSelectedTextAttribute, а не в том, что нет "последнего слова".
+    private func correctLastWord(fallbackMessage: String? = nil) {
         guard settings.isEnabled else { return }
         if correction.undoLastCorrection() {
             onMessage?("Исправление отменено")
@@ -161,7 +165,12 @@ final class InputCoordinator {
               candidate.token.context == currentContext(),
               let current = candidate.pair.source.render(candidate.variant.keys),
               let alternate = candidate.pair.target.render(candidate.variant.keys) else {
-            onMessage?("Нет доступного последнего слова")
+            if let fallbackMessage {
+                logger.record(.selectionUnavailable, code: 14)
+                onMessage?(fallbackMessage)
+            } else {
+                onMessage?("Нет доступного последнего слова")
+            }
             return
         }
 
@@ -202,7 +211,10 @@ final class InputCoordinator {
             onMessage?("Нет разрешения Accessibility")
         } catch AccessibilityTextError.noSelection,
                 AccessibilityTextError.noFocusedElement {
-            correctLastWord()
+            // A9: AX не отдал выделение — если дальше и correctLastWord() не найдёт кандидата
+            // (например, выделение делалось мышью, которая сбрасывает manualCandidate),
+            // показать понятную причину, а не общее "Нет доступного последнего слова".
+            correctLastWord(fallbackMessage: "Это приложение не отдаёт выделение через Accessibility")
         } catch {
             logger.record(.selectionUnavailable)
             onMessage?(error.localizedDescription)

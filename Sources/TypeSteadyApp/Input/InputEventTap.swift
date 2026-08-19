@@ -215,8 +215,18 @@ final class InputEventTap: @unchecked Sendable {
         // R4: это тело самого watchdogWorkItem — обнуляем ссылку на себя тем же захватом
         // лока, что и isGating/capturedEvents, не вызывая cancel() на самом себе (уже
         // выполняется, cancel() тут не нужен и не мог бы ничего изменить).
+        //
+        // B11: cancel() не прерывает уже начавшее исполняться тело work item — он лишь
+        // выставляет флаг отмены. Гонка: этот блок мог быть дочерпан из очереди и
+        // заблокирован на lock.lock() ДО того, как finishCorrectionGate()/stop() успели
+        // обнулить watchdogWorkItem под тем же локом. К моменту, когда этот блок наконец
+        // получает лок, штатное завершение уже произошло, а isGating ещё не сброшен
+        // (finishCorrectionGate() делает это позже, после replay). Проверка одного isGating
+        // тут недостаточна — нужно также убедиться, что watchdogWorkItem всё ещё указывает
+        // на ЭТОТ work item: finishCorrectionGate() и stop() обнуляют его под тем же локом,
+        // так что watchdog, получивший лок после них, обязан выйти без действий.
         lock.lock()
-        guard isGating else { lock.unlock(); return }
+        guard isGating, watchdogWorkItem != nil else { lock.unlock(); return }
         let dropped = capturedEvents.count
         capturedEvents.removeAll(keepingCapacity: true)
         isGating = false
