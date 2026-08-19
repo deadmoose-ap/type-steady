@@ -10,29 +10,32 @@ struct EventSynthesizer {
     private static let deleteKeyCode: CGKeyCode = 51
     private static let hijackingModifiers: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
 
-    func waitForModifierRelease(timeout: TimeInterval = 0.35) -> Bool {
+    /// B1: было `Thread.sleep` в плотном цикле на MainActor — блокировало UI и run loop
+    /// целиком на весь таймаут ожидания. `Task.sleep` отпускает поток между проверками,
+    /// run loop продолжает крутиться (окно настроек отвечает, tap-колбэки не копятся).
+    func waitForModifierRelease(timeout: TimeInterval = 0.35) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if CGEventSource.flagsState(.hidSystemState).isDisjoint(with: Self.hijackingModifiers) {
                 return true
             }
-            Thread.sleep(forTimeInterval: 0.004)
+            try? await Task.sleep(nanoseconds: 4_000_000)
         }
         return false
     }
 
-    func sendBackspaces(_ count: Int) throws {
+    func sendBackspaces(_ count: Int) async throws {
         guard count > 0 else { return }
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw EventSynthesizerError.eventSourceUnavailable
         }
         for _ in 0..<count {
             try postKey(keyCode: Self.deleteKeyCode, flags: [], source: source)
-            Thread.sleep(forTimeInterval: 0.001)
+            try? await Task.sleep(nanoseconds: 1_000_000)
         }
     }
 
-    func replayPhysicalKeys(_ keys: [PhysicalKey]) throws {
+    func replayPhysicalKeys(_ keys: [PhysicalKey]) async throws {
         guard let source = CGEventSource(stateID: .hidSystemState) else {
             throw EventSynthesizerError.eventSourceUnavailable
         }
@@ -41,11 +44,11 @@ struct EventSynthesizer {
             if key.shift { flags.insert(.maskShift) }
             if key.capsLock { flags.insert(.maskAlphaShift) }
             try postKey(keyCode: key.keyCode, flags: flags, source: source)
-            Thread.sleep(forTimeInterval: 0.001)
+            try? await Task.sleep(nanoseconds: 1_000_000)
         }
     }
 
-    func injectUnicode(_ source: String) throws {
+    func injectUnicode(_ source: String) async throws {
         guard let eventSource = CGEventSource(stateID: .hidSystemState) else {
             throw EventSynthesizerError.eventSourceUnavailable
         }
@@ -55,7 +58,7 @@ struct EventSynthesizer {
                 try postUnicode(buffer: buffer, keyDown: true, source: eventSource)
                 try postUnicode(buffer: buffer, keyDown: false, source: eventSource)
             }
-            if index < chunks.count - 1 { Thread.sleep(forTimeInterval: 0.002) }
+            if index < chunks.count - 1 { try? await Task.sleep(nanoseconds: 2_000_000) }
         }
     }
 

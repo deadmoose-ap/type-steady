@@ -31,6 +31,20 @@ final class CorrectionCoordinator {
     private(set) var lastCorrection: LastCorrection?
     private var lastCorrectionExpiry: DispatchWorkItem?
 
+    /// B1 §A: с переходом на async между шагами транзакции появились точки приостановки —
+    /// второй хоткей или второе завершённое слово могут запустить параллельную транзакцию
+    /// поверх ещё не завершившейся (раньше apply()/undoLastCorrection()/
+    /// replaceSelectionFallback() были синхронны, и это было структурно невозможно).
+    /// Флаг — чисто MainActor-состояние (не разделяется с tap-колбэком), поэтому обычного
+    /// Bool достаточно: MainActor выполняет только одну задачу одновременно, переключение
+    /// между задачами возможно исключительно в точках await, а флаг всегда устанавливается
+    /// синхронно сразу после проверки, без await между ними.
+    ///
+    /// Доступ уровня `internal` (не `private`) — намеренно, только чтобы `@testable`-тест
+    /// мог детерминированно воспроизвести состояние «транзакция уже идёт» без гонки таймингов
+    /// реального event tap'а. Извне пакета не виден.
+    var transactionInProgress = false
+
     init(
         eventTap: InputEventTap,
         layoutCatalog: LayoutCatalog,
@@ -52,24 +66,21 @@ final class CorrectionCoordinator {
         targetLayoutID: String,
         context: AppContext,
         userInitiated: Bool = false
-    ) -> Bool {
+    ) async -> Bool {
         guard preflight(context: context) else {
             logger.record(.correctionFailed, code: 1)
             return false
         }
-
-        var succeeded = false
-        var targetSelected = false
-        defer {
-            eventTap.finishCorrectionGate { [synthesizer] captured in
-                try? synthesizer.replayCapturedEvents(captured)
-            }
-            if targetSelected && !succeeded { _ = layoutCatalog.selectLayout(id: sourceLayoutID) }
+        guard beginTransaction() else {
+            logger.record(.correctionFailed, code: 6)
+            return false
         }
 
         let timeout = userInitiated ? Self.userInitiatedReleaseTimeout : Self.automaticReleaseTimeout
-        guard synthesizer.waitForModifierRelease(timeout: timeout) else {
+        guard await synthesizer.waitForModifierRelease(timeout: timeout) else {
             logger.record(.correctionFailed, code: 2)
+            closeGate()
+            endTransaction()
             return false
         }
         // Повторный preflight: за время ожидания (до 2 с при user-initiated) активное
@@ -77,26 +88,42 @@ final class CorrectionCoordinator {
         // быть свежей, а не сделанной секунды назад.
         guard preflight(context: context) else {
             logger.record(.correctionFailed, code: 5)
+            closeGate()
+            endTransaction()
             return false
         }
         eventTap.beginCorrectionGate()
-        guard layoutCatalog.selectLayout(id: targetLayoutID) else {
+        guard await layoutCatalog.selectLayout(id: targetLayoutID) else {
             logger.record(.correctionFailed, code: 4)
+            closeGate()
+            endTransaction()
             return false
         }
-        targetSelected = true
-        Thread.sleep(forTimeInterval: 0.012)
+        try? await Task.sleep(nanoseconds: 12_000_000)
+
+        // B1 §C: между повторным preflight (выше) и этой точкой лежат два неизбежных await —
+        // подтверждение переключения раскладки и пауза стабилизации. За это время активное
+        // приложение теоретически могло смениться, поэтому прямо перед первым Backspace
+        // проверка повторяется в третий раз. Раскладка к этому моменту уже переключена —
+        // при отказе она обязана быть возвращена, как и при любом другом отказе после
+        // targetSelected.
+        guard preflight(context: context) else {
+            logger.record(.correctionFailed, code: 7)
+            closeGate()
+            _ = await layoutCatalog.selectLayout(id: sourceLayoutID)
+            endTransaction()
+            return false
+        }
 
         do {
-            try synthesizer.sendBackspaces(deletionCount)
+            try await synthesizer.sendBackspaces(deletionCount)
             switch proposal.kind {
             case .layout, .forced:
-                try synthesizer.replayPhysicalKeys(variant.keys)
+                try await synthesizer.replayPhysicalKeys(variant.keys)
             case .transliteration:
-                try synthesizer.injectUnicode(proposal.replacement)
+                try await synthesizer.injectUnicode(proposal.replacement)
             }
-            try synthesizer.injectUnicode(variant.boundary)
-            succeeded = true
+            try await synthesizer.injectUnicode(variant.boundary)
             setLastCorrection(LastCorrection(
                 original: proposal.original,
                 replacement: proposal.replacement,
@@ -107,42 +134,65 @@ final class CorrectionCoordinator {
                 completedAt: ProcessInfo.processInfo.systemUptime
             ))
             logger.record(.correctionAccepted, value: proposal.replacement.count)
+            closeGate()
+            endTransaction()
             return true
         } catch {
             logger.record(.correctionFailed, code: 3)
+            closeGate()
+            _ = await layoutCatalog.selectLayout(id: sourceLayoutID)
+            endTransaction()
             return false
         }
     }
 
     @discardableResult
-    func undoLastCorrection() -> Bool {
+    func undoLastCorrection() async -> Bool {
         guard let last = lastCorrection,
               ProcessInfo.processInfo.systemUptime - last.completedAt < 8,
               preflight(context: last.context) else { return false }
-
-        var succeeded = false
-        var sourceSelected = false
-        defer {
-            eventTap.finishCorrectionGate { [synthesizer] captured in
-                try? synthesizer.replayCapturedEvents(captured)
-            }
-            if sourceSelected && !succeeded { _ = layoutCatalog.selectLayout(id: last.targetLayoutID) }
+        guard beginTransaction() else {
+            logger.record(.correctionFailed, code: 6)
+            return false
         }
 
-        guard synthesizer.waitForModifierRelease(timeout: Self.userInitiatedReleaseTimeout) else { return false }
+        guard await synthesizer.waitForModifierRelease(timeout: Self.userInitiatedReleaseTimeout) else {
+            closeGate()
+            endTransaction()
+            return false
+        }
         // Повторный preflight после ожидания — см. комментарий в apply().
-        guard preflight(context: last.context) else { return false }
+        guard preflight(context: last.context) else {
+            closeGate()
+            endTransaction()
+            return false
+        }
         eventTap.beginCorrectionGate()
-        guard layoutCatalog.selectLayout(id: last.sourceLayoutID) else { return false }
-        sourceSelected = true
-        Thread.sleep(forTimeInterval: 0.012)
+        guard await layoutCatalog.selectLayout(id: last.sourceLayoutID) else {
+            closeGate()
+            endTransaction()
+            return false
+        }
+        try? await Task.sleep(nanoseconds: 12_000_000)
+
+        // Третий preflight перед первым Backspace — см. комментарий в apply() (B1 §C).
+        guard preflight(context: last.context) else {
+            closeGate()
+            _ = await layoutCatalog.selectLayout(id: last.targetLayoutID)
+            endTransaction()
+            return false
+        }
         do {
-            try synthesizer.sendBackspaces(last.replacement.count + last.boundary.count)
-            try synthesizer.injectUnicode(last.original + last.boundary)
+            try await synthesizer.sendBackspaces(last.replacement.count + last.boundary.count)
+            try await synthesizer.injectUnicode(last.original + last.boundary)
             clearUndo()
-            succeeded = true
+            closeGate()
+            endTransaction()
             return true
         } catch {
+            closeGate()
+            _ = await layoutCatalog.selectLayout(id: last.targetLayoutID)
+            endTransaction()
             return false
         }
     }
@@ -151,25 +201,59 @@ final class CorrectionCoordinator {
         _ replacement: String,
         context: AppContext,
         userInitiated: Bool = false
-    ) -> SelectionFallbackOutcome {
+    ) async -> SelectionFallbackOutcome {
         guard preflight(context: context) else { return .failed }
-        defer {
-            eventTap.finishCorrectionGate { [synthesizer] captured in
-                try? synthesizer.replayCapturedEvents(captured)
-            }
-        }
-        let timeout = userInitiated ? Self.userInitiatedReleaseTimeout : Self.automaticReleaseTimeout
-        guard synthesizer.waitForModifierRelease(timeout: timeout) else { return .timedOut }
-        // Повторный preflight после ожидания — см. комментарий в apply(). Здесь отказ — не
-        // таймаут, а провал проверки безопасности, поэтому .failed, а не .timedOut.
-        guard preflight(context: context) else { return .failed }
-        eventTap.beginCorrectionGate()
-        do {
-            try synthesizer.injectUnicode(replacement)
-            return .success
-        } catch {
+        guard beginTransaction() else {
+            logger.record(.correctionFailed, code: 6)
             return .failed
         }
+        let timeout = userInitiated ? Self.userInitiatedReleaseTimeout : Self.automaticReleaseTimeout
+        guard await synthesizer.waitForModifierRelease(timeout: timeout) else {
+            closeGate()
+            endTransaction()
+            return .timedOut
+        }
+        // Повторный preflight после ожидания — см. комментарий в apply(). Здесь отказ — не
+        // таймаут, а провал проверки безопасности, поэтому .failed, а не .timedOut.
+        guard preflight(context: context) else {
+            closeGate()
+            endTransaction()
+            return .failed
+        }
+        // Здесь раскладка не переключается, поэтому между этой проверкой и injectUnicode
+        // ниже нет ни одного await — beginCorrectionGate() синхронен. Третий preflight
+        // (как в apply()/undoLastCorrection()) тут не нужен.
+        eventTap.beginCorrectionGate()
+        do {
+            try await synthesizer.injectUnicode(replacement)
+            closeGate()
+            endTransaction()
+            return .success
+        } catch {
+            closeGate()
+            endTransaction()
+            return .failed
+        }
+    }
+
+    /// Закрывает correction gate (дренаж захваченных событий). Безопасно вызывать даже если
+    /// gate не был открыт — finishCorrectionGate() в этом случае просто ничего не находит.
+    /// Раньше это жило в `defer`; с async между шагами `defer` с await недопустим, поэтому
+    /// вызов повторяется явно на каждом пути выхода после первого preflight.
+    private func closeGate() {
+        eventTap.finishCorrectionGate { [synthesizer] captured in
+            try? synthesizer.replayCapturedEvents(captured)
+        }
+    }
+
+    private func beginTransaction() -> Bool {
+        guard !transactionInProgress else { return false }
+        transactionInProgress = true
+        return true
+    }
+
+    private func endTransaction() {
+        transactionInProgress = false
     }
 
     func clearUndo() {

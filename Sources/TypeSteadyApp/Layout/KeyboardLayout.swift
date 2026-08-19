@@ -155,14 +155,21 @@ final class LayoutCatalog: ObservableObject {
         return stringProperty(current, kTISPropertyInputSourceID)
     }
 
+    /// B1: раньше поллинг подтверждения переключения раскладки крутился в плотном цикле
+    /// `Thread.sleep` без единого оборота run loop — на MainActor это блокировало UI на
+    /// весь таймаут (до 80 мс) и, по наблюдению пользователя, могло не успеть уложиться
+    /// в 80 мс при коротком реальном окне ЦП. `Task.sleep` отпускает поток между
+    /// проверками, run loop получает обороты — это одновременно снимает блокировку и,
+    /// предположительно, чинит периодические отказы «Целевая раскладка недоступна» (см.
+    /// отчёт по B1) — не подтверждено измерением на живой машине, отмечено как гипотеза.
     @discardableResult
-    func selectLayout(id: String) -> Bool {
+    func selectLayout(id: String) async -> Bool {
         guard let source = sourcesByID[id] else { return false }
         guard TISSelectInputSource(source) == noErr else { return false }
         let deadline = ProcessInfo.processInfo.systemUptime + 0.08
         repeat {
             if currentLayoutID() == id { return true }
-            Thread.sleep(forTimeInterval: 0.004)
+            try? await Task.sleep(nanoseconds: 4_000_000)
         } while ProcessInfo.processInfo.systemUptime < deadline
         return false
     }

@@ -71,7 +71,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         hotkeys = GlobalHotkeyManager()
-        hotkeys.onPerformTextAction = { [weak self] in self?.inputCoordinator.performHotkeyAction() }
+        // B1: performHotkeyAction() теперь async — вызов из GlobalHotkeyManager (не
+        // MainActor-изолированный контекст формально, хоть и на главном потоке) обёрнут
+        // в Task { @MainActor ... }, чтобы явно и безопасно пересечь границу изоляции.
+        hotkeys.onPerformTextAction = { [weak self] in
+            Task { @MainActor in
+                await self?.inputCoordinator.performHotkeyAction()
+            }
+        }
 
         statusBar = StatusBarController(settings: settings)
         configureStatusBarCallbacks()

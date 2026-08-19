@@ -27,9 +27,29 @@ final class InputCoordinator {
     /// поле обнуляется таймером, а не только проверкой возраста в момент использования.
     private static let manualCandidateLifetime: TimeInterval = 12
 
-    private var state = TypingStateMachine()
+    // Доступ уровня `internal` (не `private`) — намеренно, только чтобы @testable-тест мог
+    // детерминированно проверить содержимое модели, минуя реальный LayoutCatalog/TIS.
+    // Извне пакета не виден.
+    var state = TypingStateMachine()
     private var modifierOnlyHotkey = ModifierOnlyHotkeyRecognizer()
     private var pendingFlush: DispatchWorkItem?
+    /// R5 (пост-ревью B1): process() и флеш неоднозначной пунктуации теперь стартуют как
+    /// `Task` из синхронного handle() — между спавном Task и её фактическим стартом есть
+    /// оборот main queue, в который может прийти следующий keyDown. Раньше process()
+    /// выполнялся синхронно внутри handle(), поэтому state.markCorrectionApplied() успевал
+    /// отработать до возврата из handle() — порядок был гарантирован. Теперь это не так:
+    /// если следующий keyDown обработается раньше стартовавшей Task, TypingStateMachine
+    /// продолжит строить модель поверх уже напечатанного, но ещё неотслеженного символа, а
+    /// затем markCorrectionApplied() сотрёт его из модели, хотя на экране он останется.
+    /// Флаг выставляется СИНХРОННО в том же обороте handle(), что и state.consume/
+    /// flushAmbiguous — до какой-либо точки переключения — и запрещает handle() кормить
+    /// TypingStateMachine, пока коррекция не завершится: fail closed, как и остальные
+    /// защитные пути этого файла — лучше не предложить коррекцию следующему слову, чем
+    /// построить заведомо неверную модель.
+    ///
+    /// Доступ уровня `internal` — та же причина, что и у `state` выше: тестируемость без
+    /// реального event tap/LayoutCatalog. Извне пакета не виден.
+    var correctionPending = false
     private var manualCandidate: ManualCandidate? {
         didSet { scheduleManualCandidateExpiry() }
     }
@@ -65,7 +85,13 @@ final class InputCoordinator {
 
     func handle(_ event: InputEventSnapshot) {
         if modifierOnlyHotkey.consume(event, enabled: settings.manualHotkey == .optionOnly) {
-            performHotkeyAction()
+            // B1: performHotkeyAction() теперь async (транзакция коррекции переведена на
+            // await, чтобы не блокировать MainActor) — из синхронного колбэка tap'а
+            // запускаем её через Task. Task, созданная внутри MainActor-изолированного
+            // метода, наследует изоляцию MainActor — [ACT] не нарушается.
+            Task { @MainActor [weak self] in
+                await self?.performHotkeyAction()
+            }
             return
         }
         if event.type == .flagsChanged { return }
@@ -78,6 +104,15 @@ final class InputCoordinator {
         }
         guard event.type == .keyDown else { return }
         pendingFlush?.cancel()
+
+        if correctionPending {
+            // R5: коррекция ещё в полёте (её Task могла ещё не стартовать или уже
+            // синтезирует события) — не кормим TypingStateMachine этим keyDown вообще,
+            // иначе модель разойдётся с уже напечатанным на экране символом. Просто
+            // сбрасываем модель и ждём, пока process() снимет флаг на выходе.
+            state.invalidate()
+            return
+        }
 
         guard settings.isEnabled, !IsSecureEventInputEnabled() else {
             reset()
@@ -135,7 +170,12 @@ final class InputCoordinator {
             context: context,
             timestamp: event.timestamp
         ) {
-            process(token, pair: pair)
+            // R5: флаг выставляется синхронно здесь же, в том же обороте handle(), что и
+            // state.consume() выше, — до спавна Task и до любой точки переключения.
+            correctionPending = true
+            Task { @MainActor [weak self] in
+                await self?.process(token, pair: pair)
+            }
         }
 
         if state.hasPendingAmbiguousKey {
@@ -143,7 +183,12 @@ final class InputCoordinator {
                 guard let self,
                       let token = self.state.flushAmbiguous(timestamp: ProcessInfo.processInfo.systemUptime),
                       let pair = self.layoutCatalog.activePair(settings: self.settings) else { return }
-                self.process(token, pair: pair)
+                // R5: та же дисциплина — флаг выставляется синхронно внутри самого work item,
+                // до спавна его собственной Task.
+                self.correctionPending = true
+                Task { @MainActor [weak self] in
+                    await self?.process(token, pair: pair)
+                }
             }
             pendingFlush = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: work)
@@ -154,9 +199,9 @@ final class InputCoordinator {
     /// случая, когда сюда пришли не из-за отсутствия выделения, а потому что AX-путь уже
     /// отказал с .noSelection/.noFocusedElement — тогда реальная причина в том, что
     /// приложение не публикует kAXSelectedTextAttribute, а не в том, что нет "последнего слова".
-    private func correctLastWord(fallbackMessage: String? = nil) {
+    private func correctLastWord(fallbackMessage: String? = nil) async {
         guard settings.isEnabled else { return }
-        if correction.undoLastCorrection() {
+        if await correction.undoLastCorrection() {
             onMessage?("Исправление отменено")
             return
         }
@@ -180,7 +225,7 @@ final class InputCoordinator {
             sourceLanguage: candidate.pair.sourceLanguage,
             targetLanguage: candidate.pair.targetLanguage
         )
-        if correction.apply(
+        if await correction.apply(
             proposal: proposal,
             variant: candidate.variant,
             deletionCount: candidate.token.deletionCount,
@@ -195,16 +240,16 @@ final class InputCoordinator {
         }
     }
 
-    func performHotkeyAction() {
+    func performHotkeyAction() async {
         guard settings.isEnabled else { return }
         guard settings.selectionConversion else {
-            correctLastWord()
+            await correctLastWord()
             return
         }
 
         do {
             let selection = try accessibility.currentSelection()
-            convert(selection)
+            await convert(selection)
         } catch AccessibilityTextError.permissionMissing {
             // Отдельная ветка: без разрешения Accessibility AX-путь недоступен в принципе,
             // молчаливый уход в correctLastWord() маскировал реальную причину отказа.
@@ -214,7 +259,7 @@ final class InputCoordinator {
             // A9: AX не отдал выделение — если дальше и correctLastWord() не найдёт кандидата
             // (например, выделение делалось мышью, которая сбрасывает manualCandidate),
             // показать понятную причину, а не общее "Нет доступного последнего слова".
-            correctLastWord(fallbackMessage: "Это приложение не отдаёт выделение через Accessibility")
+            await correctLastWord(fallbackMessage: "Это приложение не отдаёт выделение через Accessibility")
         } catch {
             logger.record(.selectionUnavailable)
             onMessage?(error.localizedDescription)
@@ -237,10 +282,16 @@ final class InputCoordinator {
         correction.clearUndo()
     }
 
-    private func process(_ token: CompletedToken, pair: ActiveLayoutPair) {
+    /// R5: `correctionPending` (выставлен синхронно в `handle()` перед спавном Task, вызвавшей
+    /// этот метод) обязан быть сброшен на КАЖДОМ пути выхода — иначе handle() будет
+    /// бесконечно fail-closed игнорировать весь дальнейший набор.
+    private func process(_ token: CompletedToken, pair: ActiveLayoutPair) async {
         logger.record(.tokenCompleted, value: token.deletionCount)
         manualCandidate = token.variants.first.map { ManualCandidate(token: token, variant: $0, pair: pair) }
-        guard settings.automaticCorrection else { return }
+        guard settings.automaticCorrection else {
+            correctionPending = false
+            return
+        }
 
         let evaluated = token.variants.compactMap { variant -> (TokenVariant, CorrectionProposal)? in
             guard let current = pair.source.render(variant.keys),
@@ -257,10 +308,11 @@ final class InputCoordinator {
         }
         guard let best = evaluated.max(by: { $0.1.confidence < $1.1.confidence }) else {
             logger.record(.correctionRejected)
+            correctionPending = false
             return
         }
 
-        if correction.apply(
+        if await correction.apply(
             proposal: best.1,
             variant: best.0,
             deletionCount: token.deletionCount,
@@ -268,13 +320,17 @@ final class InputCoordinator {
             targetLayoutID: pair.target.descriptor.id,
             context: token.context
         ) {
+            // markCorrectionApplied() безопасно вызывать даже если activeKeys уже пуст
+            // (например, если параллельно отработал reset()/applicationDidActivate() —
+            // TypingStateMachine.markCorrectionApplied() просто очищает и так пустые поля).
             state.markCorrectionApplied()
             manualCandidate = nil
             onCorrection?(best.1.sourceLanguage, best.1.targetLanguage)
         }
+        correctionPending = false
     }
 
-    private func convert(_ selection: AccessibilitySelection) {
+    private func convert(_ selection: AccessibilitySelection) async {
         // Ветка 1: hard deny или пользовательское исключение приложения.
         // Обе причины действуют всегда, даже для явной команды по хоткею (см. [SEC]).
         guard !appPolicy.isHardDenied(bundleIdentifier: selection.context.bundleIdentifier),
@@ -311,24 +367,21 @@ final class InputCoordinator {
             ? pair.english.descriptor.id
             : pair.russian.descriptor.id
         let originalLayoutID = layoutCatalog.currentLayoutID()
-        guard layoutCatalog.selectLayout(id: targetID) else {
+        guard await layoutCatalog.selectLayout(id: targetID) else {
             onMessage?("Целевая раскладка недоступна")
             return
         }
 
+        // Симметрично CorrectionCoordinator.apply(): при неудаче вернуть исходную раскладку.
+        // Раньше это было в `defer`; с async между шагами `defer` с await недопустим, поэтому
+        // откат раскладки сделан явным присваиванием ниже, после do-catch, на любом исходе.
         var replaced = false
-        defer {
-            // Симметрично CorrectionCoordinator.apply(): при неудаче вернуть исходную раскладку.
-            if !replaced, let originalLayoutID {
-                _ = layoutCatalog.selectLayout(id: originalLayoutID)
-            }
-        }
 
         do {
             if try accessibility.replace(selection, with: conversion.text) {
                 replaced = true
             } else {
-                switch correction.replaceSelectionFallback(
+                switch await correction.replaceSelectionFallback(
                     conversion.text,
                     context: selection.context,
                     userInitiated: true
@@ -351,6 +404,10 @@ final class InputCoordinator {
         } catch {
             logger.record(.selectionUnavailable)
             onMessage?(error.localizedDescription)
+        }
+
+        if !replaced, let originalLayoutID {
+            _ = await layoutCatalog.selectLayout(id: originalLayoutID)
         }
     }
 
