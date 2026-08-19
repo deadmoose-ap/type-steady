@@ -104,8 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.settings.transliteration.toggle()
         }
-        statusBar.onCorrectLastWord = { [weak self] in self?.inputCoordinator.correctLastWord() }
-        statusBar.onConvertSelection = { [weak self] in self?.inputCoordinator.convertSelection() }
         statusBar.onOpenSettings = { [weak self] in self?.settingsWindow.show() }
     }
 

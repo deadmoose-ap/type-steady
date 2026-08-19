@@ -5,8 +5,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     var onToggleEnabled: (() -> Void)?
     var onToggleAutomatic: (() -> Void)?
     var onToggleTransliteration: (() -> Void)?
-    var onCorrectLastWord: (() -> Void)?
-    var onConvertSelection: (() -> Void)?
     var onOpenSettings: (() -> Void)?
 
     private let settings: AppSettings
@@ -55,9 +53,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             action: #selector(toggleTransliteration)
         ))
         menu.addItem(.separator())
-        menu.addItem(item(title: "Исправить последнее слово", action: #selector(correctLastWord), key: ""))
-        menu.addItem(item(title: "Преобразовать выделение", action: #selector(convertSelection), key: ""))
-        menu.addItem(.separator())
         menu.addItem(item(title: "Настройки…", action: #selector(openSettings), key: ","))
         menu.addItem(item(title: "Завершить TypeSteady", action: #selector(quit), key: "q"))
         updateAppearance()
@@ -78,8 +73,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func toggleEnabled() { onToggleEnabled?() }
     @objc private func toggleAutomatic() { onToggleAutomatic?() }
     @objc private func toggleTransliteration() { onToggleTransliteration?() }
-    @objc private func correctLastWord() { onCorrectLastWord?() }
-    @objc private func convertSelection() { onConvertSelection?() }
     @objc private func openSettings() { onOpenSettings?() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

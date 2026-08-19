@@ -26,7 +26,6 @@ struct AccessibilitySelection {
     let element: AXUIElement
     let text: String
     let context: AppContext
-    let selectedTextSettable: Bool
 }
 
 @MainActor
@@ -51,29 +50,22 @@ final class AccessibilityTextService {
         guard status == .success, let text = selectedValue as? String, !text.isEmpty else {
             throw AccessibilityTextError.noSelection
         }
-        var settable = DarwinBoolean(false)
-        AXUIElementIsAttributeSettable(focused, kAXSelectedTextAttribute as CFString, &settable)
-        return AccessibilitySelection(
-            element: focused,
-            text: text,
-            context: context,
-            selectedTextSettable: settable.boolValue
-        )
+        return AccessibilitySelection(element: focused, text: text, context: context)
     }
 
     func replace(_ selection: AccessibilitySelection, with replacement: String) throws -> Bool {
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == selection.context.processIdentifier else {
             throw AccessibilityTextError.applicationChanged
         }
-        if selection.selectedTextSettable {
-            let status = AXUIElementSetAttributeValue(
-                selection.element,
-                kAXSelectedTextAttribute as CFString,
-                replacement as CFTypeRef
-            )
-            if status == .success { return true }
-        }
-        return false
+        // Всегда пробуем прямую AX-запись: AXUIElementIsAttributeSettable врёт для части
+        // приложений (Chromium/Electron, WebKit, часть JetBrains) — они сообщают settable=false,
+        // но корректно обрабатывают AXUIElementSetAttributeValue. Спрашивать заранее — только вредить.
+        let status = AXUIElementSetAttributeValue(
+            selection.element,
+            kAXSelectedTextAttribute as CFString,
+            replacement as CFString
+        )
+        return status == .success
     }
 
     func focusedElementIsSecure() -> Bool {

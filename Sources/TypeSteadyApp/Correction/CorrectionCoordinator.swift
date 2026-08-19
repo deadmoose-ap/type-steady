@@ -2,6 +2,16 @@ import AppKit
 import Carbon
 import Foundation
 
+/// Результат резервной (fallback) замены выделения через Unicode-инъекцию.
+/// Отдельно от `Bool`, чтобы вызывающий код мог различить «приложение отказало»
+/// и «истёк таймаут ожидания отпускания модификаторов хоткея» — это разные
+/// причины отказа и требуют разных сообщений пользователю.
+enum SelectionFallbackOutcome {
+    case success
+    case timedOut
+    case failed
+}
+
 @MainActor
 final class CorrectionCoordinator {
     private let eventTap: InputEventTap
@@ -9,6 +19,11 @@ final class CorrectionCoordinator {
     private let synthesizer: EventSynthesizer
     private let logger: DiagnosticLogger
     private let appPolicy = AppPolicy()
+
+    /// Действие инициировано пользователем через хоткей — держать аккорд дольше нормально.
+    private static let userInitiatedReleaseTimeout: TimeInterval = 2.0
+    /// Автоматическая коррекция на границе слова — пользователь модификаторы не держит.
+    private static let automaticReleaseTimeout: TimeInterval = 0.35
 
     private(set) var lastCorrection: LastCorrection?
 
@@ -31,14 +46,14 @@ final class CorrectionCoordinator {
         deletionCount: Int,
         sourceLayoutID: String,
         targetLayoutID: String,
-        context: AppContext
+        context: AppContext,
+        userInitiated: Bool = false
     ) -> Bool {
         guard preflight(context: context) else {
             logger.record(.correctionFailed, code: 1)
             return false
         }
 
-        eventTap.beginCorrectionGate()
         var succeeded = false
         var targetSelected = false
         defer {
@@ -48,10 +63,19 @@ final class CorrectionCoordinator {
             if targetSelected && !succeeded { _ = layoutCatalog.selectLayout(id: sourceLayoutID) }
         }
 
-        guard synthesizer.waitForModifierRelease() else {
+        let timeout = userInitiated ? Self.userInitiatedReleaseTimeout : Self.automaticReleaseTimeout
+        guard synthesizer.waitForModifierRelease(timeout: timeout) else {
             logger.record(.correctionFailed, code: 2)
             return false
         }
+        // Повторный preflight: за время ожидания (до 2 с при user-initiated) активное
+        // приложение или Secure Input могли смениться — проверка перед удалением обязана
+        // быть свежей, а не сделанной секунды назад.
+        guard preflight(context: context) else {
+            logger.record(.correctionFailed, code: 5)
+            return false
+        }
+        eventTap.beginCorrectionGate()
         guard layoutCatalog.selectLayout(id: targetLayoutID) else {
             logger.record(.correctionFailed, code: 4)
             return false
@@ -92,7 +116,6 @@ final class CorrectionCoordinator {
               ProcessInfo.processInfo.systemUptime - last.completedAt < 8,
               preflight(context: last.context) else { return false }
 
-        eventTap.beginCorrectionGate()
         var succeeded = false
         var sourceSelected = false
         defer {
@@ -102,7 +125,10 @@ final class CorrectionCoordinator {
             if sourceSelected && !succeeded { _ = layoutCatalog.selectLayout(id: last.targetLayoutID) }
         }
 
-        guard synthesizer.waitForModifierRelease() else { return false }
+        guard synthesizer.waitForModifierRelease(timeout: Self.userInitiatedReleaseTimeout) else { return false }
+        // Повторный preflight после ожидания — см. комментарий в apply().
+        guard preflight(context: last.context) else { return false }
+        eventTap.beginCorrectionGate()
         guard layoutCatalog.selectLayout(id: last.sourceLayoutID) else { return false }
         sourceSelected = true
         Thread.sleep(forTimeInterval: 0.012)
@@ -117,20 +143,28 @@ final class CorrectionCoordinator {
         }
     }
 
-    func replaceSelectionFallback(_ replacement: String, context: AppContext) -> Bool {
-        guard preflight(context: context) else { return false }
-        eventTap.beginCorrectionGate()
+    func replaceSelectionFallback(
+        _ replacement: String,
+        context: AppContext,
+        userInitiated: Bool = false
+    ) -> SelectionFallbackOutcome {
+        guard preflight(context: context) else { return .failed }
         defer {
             eventTap.finishCorrectionGate { [synthesizer] captured in
                 try? synthesizer.replayCapturedEvents(captured)
             }
         }
-        guard synthesizer.waitForModifierRelease() else { return false }
+        let timeout = userInitiated ? Self.userInitiatedReleaseTimeout : Self.automaticReleaseTimeout
+        guard synthesizer.waitForModifierRelease(timeout: timeout) else { return .timedOut }
+        // Повторный preflight после ожидания — см. комментарий в apply(). Здесь отказ — не
+        // таймаут, а провал проверки безопасности, поэтому .failed, а не .timedOut.
+        guard preflight(context: context) else { return .failed }
+        eventTap.beginCorrectionGate()
         do {
             try synthesizer.injectUnicode(replacement)
-            return true
+            return .success
         } catch {
-            return false
+            return .failed
         }
     }
 

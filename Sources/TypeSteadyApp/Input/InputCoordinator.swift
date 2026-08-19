@@ -128,7 +128,7 @@ final class InputCoordinator {
         }
     }
 
-    func correctLastWord() {
+    private func correctLastWord() {
         guard settings.isEnabled else { return }
         if correction.undoLastCorrection() {
             onMessage?("Исправление отменено")
@@ -155,7 +155,8 @@ final class InputCoordinator {
             deletionCount: candidate.token.deletionCount,
             sourceLayoutID: candidate.pair.source.descriptor.id,
             targetLayoutID: candidate.pair.target.descriptor.id,
-            context: candidate.token.context
+            context: candidate.token.context,
+            userInitiated: true
         ) {
             state.markCorrectionApplied()
             manualCandidate = nil
@@ -173,21 +174,13 @@ final class InputCoordinator {
         do {
             let selection = try accessibility.currentSelection()
             convert(selection)
+        } catch AccessibilityTextError.permissionMissing {
+            // Отдельная ветка: без разрешения Accessibility AX-путь недоступен в принципе,
+            // молчаливый уход в correctLastWord() маскировал реальную причину отказа.
+            onMessage?("Нет разрешения Accessibility")
         } catch AccessibilityTextError.noSelection,
-                AccessibilityTextError.noFocusedElement,
-                AccessibilityTextError.permissionMissing {
+                AccessibilityTextError.noFocusedElement {
             correctLastWord()
-        } catch {
-            logger.record(.selectionUnavailable)
-            onMessage?(error.localizedDescription)
-        }
-    }
-
-    func convertSelection() {
-        guard settings.isEnabled, settings.selectionConversion else { return }
-        do {
-            let selection = try accessibility.currentSelection()
-            convert(selection)
         } catch {
             logger.record(.selectionUnavailable)
             onMessage?(error.localizedDescription)
@@ -241,38 +234,71 @@ final class InputCoordinator {
     }
 
     private func convert(_ selection: AccessibilitySelection) {
+        // Ветка 1: hard deny или пользовательское исключение приложения.
+        // Обе причины действуют всегда, даже для явной команды по хоткею (см. [SEC]).
         guard !appPolicy.isHardDenied(bundleIdentifier: selection.context.bundleIdentifier),
-              let pair = layoutCatalog.selectedPair(settings: settings),
-              let conversion = selectedTextConverter.convert(
-                selection.text,
-                english: pair.english,
-                russian: pair.russian
-              ) else {
-            onMessage?("Выделение не требует преобразования")
+              !settings.excludedBundleIDSet.contains(selection.context.bundleIdentifier.lowercased()) else {
+            logger.record(.selectionUnavailable, code: 10)
+            onMessage?("Это приложение исключено из преобразования")
+            return
+        }
+        // Ветка 2: для активной раскладки не настроена пара English/Russian.
+        guard let pair = layoutCatalog.selectedPair(settings: settings) else {
+            logger.record(.selectionUnavailable, code: 11)
+            onMessage?("Пара раскладок для преобразования не настроена")
+            return
+        }
+        // Ветка 3: в выделении реально нет символов, которые можно преобразовать.
+        guard let conversion = selectedTextConverter.convert(
+            selection.text,
+            english: pair.english,
+            russian: pair.russian
+        ) else {
+            logger.record(.selectionUnavailable, code: 12)
+            onMessage?("В выделении нет символов для преобразования")
             return
         }
 
         let targetID = conversion.targetLanguage == .english
             ? pair.english.descriptor.id
             : pair.russian.descriptor.id
+        let originalLayoutID = layoutCatalog.currentLayoutID()
         guard layoutCatalog.selectLayout(id: targetID) else {
             onMessage?("Целевая раскладка недоступна")
             return
         }
 
+        var replaced = false
+        defer {
+            // Симметрично CorrectionCoordinator.apply(): при неудаче вернуть исходную раскладку.
+            if !replaced, let originalLayoutID {
+                _ = layoutCatalog.selectLayout(id: originalLayoutID)
+            }
+        }
+
         do {
-            let replacedDirectly = try accessibility.replace(selection, with: conversion.text)
-            let replaced = replacedDirectly || correction.replaceSelectionFallback(
-                conversion.text,
-                context: selection.context
-            )
+            if try accessibility.replace(selection, with: conversion.text) {
+                replaced = true
+            } else {
+                switch correction.replaceSelectionFallback(
+                    conversion.text,
+                    context: selection.context,
+                    userInitiated: true
+                ) {
+                case .success:
+                    replaced = true
+                case .timedOut:
+                    onMessage?("Отпустите клавиши хоткея")
+                case .failed:
+                    onMessage?("Это приложение не разрешает заменить выделение")
+                }
+            }
             if replaced {
                 logger.record(.selectionConverted, value: conversion.text.count)
                 onCorrection?(conversion.sourceLanguage, conversion.targetLanguage)
                 reset()
             } else {
                 logger.record(.selectionUnavailable)
-                onMessage?("Это приложение не разрешает заменить выделение")
             }
         } catch {
             logger.record(.selectionUnavailable)
