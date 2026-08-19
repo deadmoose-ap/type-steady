@@ -116,17 +116,44 @@ final class AppSettings: ObservableObject {
     @Published var strictCodeEditors: Bool { didSet { persist(Key.strictCodeEditors, strictCodeEditors) } }
     @Published var aggressiveness: DetectionAggressiveness { didSet { persist(Key.aggressiveness, aggressiveness.rawValue) } }
     @Published var manualHotkey: HotkeyChoice { didSet { persist(Key.manualHotkey, manualHotkey.rawValue) } }
-    @Published var englishLayoutID: String { didSet { persist(Key.englishLayoutID, englishLayoutID) } }
-    @Published var russianLayoutID: String { didSet { persist(Key.russianLayoutID, russianLayoutID) } }
-    @Published var excludedBundleIDs: String { didSet { persist(Key.excludedBundleIDs, excludedBundleIDs) } }
-    @Published var alwaysConvert: String { didSet { persist(Key.alwaysConvert, alwaysConvert) } }
+    // B8: у строковых свойств набор символов меняется на каждое нажатие клавиши в
+    // текстовом поле настроек — рассылка .typeSteadySettingsChanged (и, соответственно,
+    // applySettings() у AppDelegate) для них дебаунсится на ~150 мс. Булевы/enum-свойства
+    // выше продолжают постить немедленно — от них зависят пуск/остановка event tap и
+    // перерегистрация хоткея, задержка там недопустима.
+    @Published var englishLayoutID: String { didSet { persistDebounced(Key.englishLayoutID, englishLayoutID) } }
+    @Published var russianLayoutID: String { didSet { persistDebounced(Key.russianLayoutID, russianLayoutID) } }
+    @Published var excludedBundleIDs: String {
+        didSet {
+            // B4: кэш пересобирается немедленно и синхронно с самим значением — дебаунсится
+            // только рассылка уведомления ниже, а не сам кэш, иначе только что введённое
+            // правило не действовало бы ближайшие 150 мс.
+            excludedBundleIDSet = lineSet(excludedBundleIDs)
+            persistDebounced(Key.excludedBundleIDs, excludedBundleIDs)
+        }
+    }
+    @Published var alwaysConvert: String {
+        didSet {
+            alwaysConvertSet = lineSet(alwaysConvert)
+            persistDebounced(Key.alwaysConvert, alwaysConvert)
+        }
+    }
     @Published var neverConvert: String {
         didSet {
             neverCorrectRules = UserTermRules(neverConvert)
-            persist(Key.neverConvert, neverConvert)
+            persistDebounced(Key.neverConvert, neverConvert)
         }
     }
     private(set) var neverCorrectRules: UserTermRules
+    // B4: были вычисляемыми свойствами (lineSet прогоняет каждую строку через
+    // UserTermRules.normalize) и пересчитывались на каждое нажатие клавиши — excludedBundleIDSet
+    // читается в InputCoordinator.handle()/DetectionEngine.proposal() на каждый keyDown,
+    // alwaysConvertSet — на каждый завершённый токен. Теперь кэшируются в didSet, тем же
+    // паттерном, что и neverConvert → neverCorrectRules выше.
+    private(set) var excludedBundleIDSet: Set<String>
+    private(set) var alwaysConvertSet: Set<String>
+    private var pendingNotification: DispatchWorkItem?
+    private static let stringPropertyNotificationDebounce: TimeInterval = 0.15
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -146,18 +173,27 @@ final class AppSettings: ObservableObject {
         manualHotkey = HotkeyChoice(rawValue: defaults.integer(forKey: Key.manualHotkey)) ?? .controlOptionSpace
         englishLayoutID = defaults.string(forKey: Key.englishLayoutID) ?? ""
         russianLayoutID = defaults.string(forKey: Key.russianLayoutID) ?? ""
-        excludedBundleIDs = defaults.string(forKey: Key.excludedBundleIDs) ?? ""
-        alwaysConvert = defaults.string(forKey: Key.alwaysConvert) ?? ""
+        let storedExcludedBundleIDs = defaults.string(forKey: Key.excludedBundleIDs) ?? ""
+        excludedBundleIDs = storedExcludedBundleIDs
+        let storedAlwaysConvert = defaults.string(forKey: Key.alwaysConvert) ?? ""
+        alwaysConvert = storedAlwaysConvert
         let storedNeverConvert = defaults.string(forKey: Key.neverConvert) ?? ""
         neverConvert = storedNeverConvert
         neverCorrectRules = UserTermRules(storedNeverConvert)
+        // Кэши инициализируются здесь напрямую (а не через didSet выше — didSet не
+        // выполняется при первичном присваивании в init) тем же способом, что и
+        // neverCorrectRules двумя строками выше.
+        excludedBundleIDSet = Self.lineSet(storedExcludedBundleIDs)
+        alwaysConvertSet = Self.lineSet(storedAlwaysConvert)
     }
 
-    var excludedBundleIDSet: Set<String> { lineSet(excludedBundleIDs) }
-    var alwaysConvertSet: Set<String> { lineSet(alwaysConvert) }
     var neverConvertSet: Set<String> { neverCorrectRules.entries }
 
     private func lineSet(_ source: String) -> Set<String> {
+        Self.lineSet(source)
+    }
+
+    private static func lineSet(_ source: String) -> Set<String> {
         Set(source
             .components(separatedBy: .newlines)
             .map(UserTermRules.normalize)
@@ -167,5 +203,20 @@ final class AppSettings: ObservableObject {
     private func persist(_ key: String, _ value: Any) {
         defaults.set(value, forKey: key)
         NotificationCenter.default.post(name: .typeSteadySettingsChanged, object: self)
+    }
+
+    /// B8: значение в UserDefaults записывается немедленно (чтение настроек не должно
+    /// зависеть от таймера), а рассылка уведомления об изменении — дебаунсится, чтобы
+    /// applySettings() у AppDelegate не перезапускался на каждый символ, набранный в
+    /// текстовом поле «Исключённые приложения»/«Всегда/Никогда исправлять».
+    private func persistDebounced(_ key: String, _ value: Any) {
+        defaults.set(value, forKey: key)
+        pendingNotification?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            NotificationCenter.default.post(name: .typeSteadySettingsChanged, object: self)
+        }
+        pendingNotification = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.stringPropertyNotificationDebounce, execute: work)
     }
 }

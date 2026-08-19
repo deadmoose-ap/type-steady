@@ -3,6 +3,21 @@ import Foundation
 struct AppPolicy {
     static let typeSteadyBundleIdentifier = "local.typesteady.app"
 
+    // B5: раньше эти паттерны передавались строками в token.range(of:options:.regularExpression),
+    // который компилирует NSRegularExpression заново на КАЖДЫЙ вызов — а isStructurallyProtected
+    // вызывается на каждый завершённый токен. Предкомпилированы один раз в static let.
+    // NSRegularExpression — потокобезопасный неизменяемый (immutable) тип, поэтому общий
+    // static-экземпляр безопасен для конкурентного использования.
+    //
+    // range(of:options:.regularExpression) ищет ПОДСТРОКУ, а не полное совпадение — семантика
+    // сохранена 1:1, включая уже расставленные якоря ^/$ там, где они были в исходных паттернах.
+    private static let mixedAlnumPattern = try! NSRegularExpression(pattern: #"[A-Za-z][0-9]|[0-9][A-Za-z]"#)
+    private static let lowerCamelPattern = try! NSRegularExpression(pattern: #"^[a-z]+(?:[A-Z][A-Za-z0-9]*)+$"#)
+    private static let upperCamelPattern = try! NSRegularExpression(pattern: #"^[A-Z][a-z]+(?:[A-Z][A-Za-z0-9]*)+$"#)
+    private static let screamingCamelPattern = try! NSRegularExpression(pattern: #"^[A-Z]{2,}(?:[A-Z][a-z0-9]+)+$"#)
+    private static let codeTokenPattern = try! NSRegularExpression(pattern: #"^[A-Za-z][A-Za-z0-9.+#-]{1,31}$"#)
+    private static let identifierPatterns = [lowerCamelPattern, upperCamelPattern, screamingCamelPattern]
+
     // C7: сравнение регистронезависимое — normalize в isHardDenied приводит входной
     // bundleIdentifier к нижнему регистру, поэтому и коллекции здесь должны быть заранее
     // приведены к нижнему регистру, иначе Set.contains/hasPrefix молча перестанут совпадать.
@@ -69,20 +84,13 @@ struct AppPolicy {
         if lower.contains("://") || lower.contains("@") || lower.contains("\\") || lower.contains("/") {
             return true
         }
-        if token.contains("_") || token.range(of: #"[A-Za-z][0-9]|[0-9][A-Za-z]"#, options: .regularExpression) != nil {
+        if token.contains("_") || Self.matches(Self.mixedAlnumPattern, in: token) {
             return true
         }
-        let identifierPatterns = [
-            #"^[a-z]+(?:[A-Z][A-Za-z0-9]*)+$"#,
-            #"^[A-Z][a-z]+(?:[A-Z][A-Za-z0-9]*)+$"#,
-            #"^[A-Z]{2,}(?:[A-Z][a-z0-9]+)+$"#
-        ]
-        if identifierPatterns.contains(where: {
-            token.range(of: $0, options: .regularExpression) != nil
-        }) {
+        if Self.identifierPatterns.contains(where: { Self.matches($0, in: token) }) {
             return true
         }
-        if inCodeEditor && token.range(of: #"^[A-Za-z][A-Za-z0-9.+#-]{1,31}$"#, options: .regularExpression) != nil {
+        if inCodeEditor && Self.matches(Self.codeTokenPattern, in: token) {
             let knownCodeTokens: Set<String> = [
                 "api", "async", "await", "bool", "class", "const", "enum", "false", "func",
                 "git", "html", "http", "https", "int", "json", "kubectl", "let", "nginx",
@@ -92,5 +100,11 @@ struct AppPolicy {
             return knownCodeTokens.contains(lower)
         }
         return false
+    }
+
+    /// Эквивалент `token.range(of: pattern, options: .regularExpression) != nil`, но по
+    /// предкомпилированному NSRegularExpression — ищет ПОДСТРОКУ, не требует полного совпадения.
+    private static func matches(_ regex: NSRegularExpression, in token: String) -> Bool {
+        regex.firstMatch(in: token, range: NSRange(token.startIndex..., in: token)) != nil
     }
 }

@@ -1,5 +1,23 @@
 import Foundation
 
+/// Общие лимиты, используемые несколькими модулями. Единая точка правды — раньше лимит
+/// длины преобразуемого выделения (C5/C8) был задублирован как отдельная константа в
+/// InputCoordinator; теперь оба места (InputCoordinator.convert() и
+/// AccessibilityTextService.currentSelection(), см. C8) ссылаются на одно значение.
+enum TypeSteadyLimits {
+    /// Верхняя граница длины преобразуемого выделения. Fallback-путь синтезирует Unicode-события
+    /// чанками с паузами — без лимита выделение крупного документа блокирует main thread на
+    /// секунды (см. code review C5).
+    ///
+    /// R3 (пост-ревью спринта 3): этот лимит — верхняя граница для
+    /// InputEventTap.correctionGateWatchdogTimeout (весь fallback-путь работает внутри
+    /// correction gate). При увеличении этого значения или размера чанка в
+    /// EventSynthesizer.chunkUTF16 пересчитать худшее легитимное время инъекции и при
+    /// необходимости поднять watchdog-таймаут — иначе watchdog начнёт обрывать легитимную
+    /// операцию и терять пользовательский ввод.
+    static let maxConvertibleSelectionLength = 5000
+}
+
 struct PhysicalKey: Hashable, Sendable {
     let keyCode: UInt16
     let shift: Bool

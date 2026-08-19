@@ -55,17 +55,35 @@ final class InputCoordinator {
     }
     private var manualCandidateExpiry: DispatchWorkItem?
 
-    /// Верхняя граница длины преобразуемого выделения. Fallback-путь синтезирует Unicode-события
-    /// чанками с паузами — без лимита выделение крупного документа блокирует main thread на
-    /// секунды (см. code review C5).
-    ///
-    /// R3 (пост-ревью спринта 3): этот лимит — верхняя граница для
-    /// InputEventTap.correctionGateWatchdogTimeout (весь fallback-путь работает внутри
-    /// correction gate). При увеличении этого значения или размера чанка в
-    /// EventSynthesizer.chunkUTF16 пересчитать худшее легитимное время инъекции и при
-    /// необходимости поднять watchdog-таймаут — иначе watchdog начнёт обрывать легитимную
-    /// операцию и терять пользовательский ввод.
-    private static let maxConvertibleSelectionLength = 5000
+    // C8: лимит вынесен в общую константу TypeSteadyLimits.maxConvertibleSelectionLength
+    // (Core/Models.swift) — тот же лимит теперь также используется в
+    // AccessibilityTextService.currentSelection() для ранней проверки ДО чтения текста.
+
+    // B6: раньше currentContext() дёргал NSWorkspace.shared.frontmostApplication на КАЖДЫЙ
+    // keyDown. AppDelegate уже наблюдает NSWorkspace.didActivateApplicationNotification и
+    // вызывает applicationDidActivate() — кэшируем результат там и читаем кэш здесь.
+    // ВАЖНО [граница безопасности]: если кэш пуст (например, до первого уведомления о смене
+    // приложения после запуска), currentContext() обязан упасть обратно на прямой вызов
+    // NSWorkspace, а не молча вернуть .unknown — иначе на старте приложения проверки
+    // isHardDenied/excludedBundleIDSet видели бы неверный контекст. CorrectionCoordinator.preflight()
+    // и AccessibilityTextService намеренно НЕ переведены на этот кэш — они сверяют PID
+    // непосредственно перед деструктивным действием и должны видеть свежую истину, а не кэш.
+    //
+    // R6 (пост-ревью спринта 5b): applicationDidActivate() приходит по
+    // NSWorkspace.didActivateApplicationNotification, а keyDown-события — по отдельному пути
+    // через event tap; порядок доставки между ними не гарантирован. Без ограничения возраста
+    // кэш мог пережить реальную смену фронтального приложения на неопределённое время (до
+    // следующего уведомления), и hard deny (в т.ч. для менеджеров паролей, [SEC]) проверялся
+    // бы по УЖЕ НЕАКТУАЛЬНОМУ bundleIdentifier. Это граница безопасности, а не просто
+    // оптимизация: cacheTTL держит окно устаревания коротким и самовосстанавливающимся —
+    // currentContext() перечитывает NSWorkspace всякий раз, когда кэшу больше cacheTTL, даже
+    // если applicationDidActivate() ещё не вызывался.
+    // Доступ уровня `internal` (не `private`) — та же причина, что у `state`/`correctionPending`
+    // выше: только чтобы @testable-тест мог детерминированно выставить устаревшее значение и
+    // проверить самовосстановление TTL, минуя реальный NSWorkspace. Извне пакета не виден.
+    static let cachedContextTTL: TimeInterval = 0.25
+    var cachedContext: AppContext?
+    var cachedContextTimestamp: TimeInterval = -.infinity
 
     init(
         settings: AppSettings,
@@ -99,6 +117,10 @@ final class InputCoordinator {
             // Клик мог сменить фокусированный элемент — кэш focusedElementIsSecure() (B3)
             // не должен пережить его дольше своего TTL.
             accessibility.invalidateSecureCache()
+            // R6: клик мог сменить и фронтальное приложение (например, клик по окну другого
+            // приложения) раньше, чем придёт didActivateApplicationNotification — та же
+            // причина, по которой инвалидируется secure-кэш строкой выше.
+            invalidateCachedContext()
             reset()
             return
         }
@@ -260,6 +282,15 @@ final class InputCoordinator {
             // (например, выделение делалось мышью, которая сбрасывает manualCandidate),
             // показать понятную причину, а не общее "Нет доступного последнего слова".
             await correctLastWord(fallbackMessage: "Это приложение не отдаёт выделение через Accessibility")
+        } catch AccessibilityTextError.selectionTooLarge {
+            // R7 (пост-ревью спринта 5b): C8 добавил раннюю проверку лимита в
+            // currentSelection() ДО чтения текста — та же причина отказа, что и запасная
+            // проверка в convert() (ветка 1.5, код 13). Код должен совпадать в обоих
+            // случаях, иначе одна и та же по смыслу причина отказа различима в логах по
+            // тому, публикует ли приложение kAXSelectedTextRangeAttribute — случайная,
+            // а не осмысленная развилка.
+            logger.record(.selectionUnavailable, code: 13)
+            onMessage?(AccessibilityTextError.selectionTooLarge.localizedDescription)
         } catch {
             logger.record(.selectionUnavailable)
             onMessage?(error.localizedDescription)
@@ -270,6 +301,7 @@ final class InputCoordinator {
     /// focusedElementIsSecure() (B3) инвалидируется явно, а не по истечении TTL.
     func applicationDidActivate() {
         accessibility.invalidateSecureCache()
+        setCachedContext(computeCurrentContext())
         reset()
     }
 
@@ -341,7 +373,7 @@ final class InputCoordinator {
         }
         // Ветка 1.5: выделение слишком велико — fallback-путь синтезировал бы десятки тысяч
         // Unicode-событий чанками с Thread.sleep, блокируя main thread на секунды (C5).
-        guard selection.text.count <= Self.maxConvertibleSelectionLength else {
+        guard selection.text.count <= TypeSteadyLimits.maxConvertibleSelectionLength else {
             logger.record(.selectionUnavailable, code: 13)
             onMessage?("Выделение слишком большое для преобразования")
             return
@@ -433,11 +465,39 @@ final class InputCoordinator {
         )
     }
 
-    private func currentContext() -> AppContext {
+    // internal — см. комментарий у cachedContext выше.
+    func currentContext() -> AppContext {
+        // B6/R6: кэш заполняется в applicationDidActivate(), но используется, только пока он
+        // не старше cachedContextTTL — см. комментарий у cachedContextTTL выше. Если кэш пуст
+        // ИЛИ устарел, fail-open на прямой опрос NSWorkspace и обновляем кэш заново — не
+        // ослаблять проверки устаревшим/пустым значением.
+        let now = ProcessInfo.processInfo.systemUptime
+        if let cachedContext, now - cachedContextTimestamp < Self.cachedContextTTL {
+            return cachedContext
+        }
+        let fresh = computeCurrentContext()
+        setCachedContext(fresh, at: now)
+        return fresh
+    }
+
+    private func computeCurrentContext() -> AppContext {
         guard let app = NSWorkspace.shared.frontmostApplication else { return .unknown }
         return AppContext(
             processIdentifier: app.processIdentifier,
             bundleIdentifier: app.bundleIdentifier ?? "unknown"
         )
+    }
+
+    private func setCachedContext(_ context: AppContext, at timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        cachedContext = context
+        cachedContextTimestamp = timestamp
+    }
+
+    /// R6: клик (см. handle()) обязан инвалидировать кэш, а не просто дать ему истечь по TTL —
+    /// клик мог сменить фронтальное приложение немедленно, и до истечения TTL окно
+    /// устаревания было бы шире необходимого.
+    private func invalidateCachedContext() {
+        cachedContext = nil
+        cachedContextTimestamp = -.infinity
     }
 }

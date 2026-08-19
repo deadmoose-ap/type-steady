@@ -10,6 +10,7 @@ enum AccessibilityTextError: LocalizedError {
     case noSelection
     case replacementUnsupported
     case applicationChanged
+    case selectionTooLarge
 
     var errorDescription: String? {
         switch self {
@@ -19,6 +20,7 @@ enum AccessibilityTextError: LocalizedError {
         case .noSelection: return "Текст не выделен"
         case .replacementUnsupported: return "Приложение не разрешает заменить выделение"
         case .applicationChanged: return "Активное приложение изменилось"
+        case .selectionTooLarge: return "Выделение слишком большое для преобразования"
         }
     }
 }
@@ -60,6 +62,17 @@ final class AccessibilityTextService {
             throw AccessibilityTextError.noFocusedElement
         }
         if isSecure(focused) { throw AccessibilityTextError.secureField }
+
+        // C8: раньше лимит длины (C5/TypeSteadyLimits.maxConvertibleSelectionLength)
+        // проверялся уже ПОСЛЕ того, как kAXSelectedTextAttribute прочитал весь текст
+        // выделения в память. Здесь — попытка узнать длину диапазона заранее через
+        // kAXSelectedTextRangeAttribute и отказать до чтения самого текста. Не все
+        // приложения публикуют этот атрибут, поэтому при его недоступности просто идём
+        // дальше обычным путём — контроль остаётся, только более поздний (проверка длины
+        // в InputCoordinator.convert() как раньше остаётся окончательной страховкой).
+        if let range = selectedTextRange(focused), range.length > TypeSteadyLimits.maxConvertibleSelectionLength {
+            throw AccessibilityTextError.selectionTooLarge
+        }
 
         var selectedValue: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(focused, kAXSelectedTextAttribute as CFString, &selectedValue)
@@ -111,6 +124,23 @@ final class AccessibilityTextService {
     /// использовать устаревший результат).
     func invalidateSecureCache() {
         secureCache = nil
+    }
+
+    /// C8: пытается прочитать kAXSelectedTextRangeAttribute как CFRange, не читая сам текст.
+    /// Возвращает nil, если приложение не публикует атрибут или его тип неожиданный —
+    /// вызывающий код в этом случае просто продолжает обычным путём (см. currentSelection()).
+    private func selectedTextRange(_ element: AXUIElement) -> CFRange? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
+              let value,
+              CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        // Тип уже верифицирован через CFGetTypeID — безопасное приведение, как и в
+        // copyElementAttribute() ниже.
+        let axValue = value as! AXValue
+        guard AXValueGetType(axValue) == .cfRange else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(axValue, .cfRange, &range) else { return nil }
+        return range
     }
 
     private func copyElementAttribute(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {

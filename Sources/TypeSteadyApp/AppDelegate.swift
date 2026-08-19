@@ -29,6 +29,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var startRetryWorkItem: DispatchWorkItem?
     private var startRetryAttempt = 0
     private static let startRetryDelays: [TimeInterval] = [0.5, 1.5, 3.0]
+    // B9: дебаунс пересборки снапшотов раскладок (LayoutCatalog.buildSnapshot — 512 вызовов
+    // UCKeyTranslate на раскладку) при серии distributed-уведомлений о смене источников ввода.
+    private var layoutsRefreshWorkItem: DispatchWorkItem?
+    private static let layoutsRefreshDebounce: TimeInterval = 0.3
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         settings = AppSettings()
@@ -106,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         tapRecoveryWorkItem?.cancel()
         startRetryWorkItem?.cancel()
+        layoutsRefreshWorkItem?.cancel()
         eventTap?.stop()
         hotkeys?.stop()
         observers.forEach(NotificationCenter.default.removeObserver)
@@ -151,7 +156,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshLayouts() }
+            // B9: buildSnapshot() делает 512 вызовов UCKeyTranslate на раскладку, а система
+            // может прислать несколько таких уведомлений подряд за одно переключение
+            // источников ввода — коалесцируем дебаунсом. Ручная кнопка «Обновить раскладки»
+            // в настройках вызывает refreshLayouts() напрямую, минуя дебаунс.
+            MainActor.assumeIsolated { self?.scheduleLayoutsRefresh() }
         })
     }
 
@@ -289,8 +298,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshLayouts() {
+        layoutsRefreshWorkItem?.cancel()
+        layoutsRefreshWorkItem = nil
         inputCoordinator.reset()
         layouts.refresh(settings: settings)
         logger.record(.layoutRefresh, value: layouts.descriptors.count)
+    }
+
+    /// B9: дебаунс ~300 мс — отменяет предыдущий отложенный вызов при новом уведомлении о
+    /// смене источников ввода, чтобы серия уведомлений привела к одной пересборке снапшотов,
+    /// а не к N.
+    private func scheduleLayoutsRefresh() {
+        layoutsRefreshWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.refreshLayouts() }
+        layoutsRefreshWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.layoutsRefreshDebounce, execute: work)
     }
 }

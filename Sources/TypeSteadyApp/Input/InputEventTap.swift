@@ -65,7 +65,7 @@ final class InputEventTap: @unchecked Sendable {
     /// R3 (пост-ревью спринта 3): это аварийный клапан против мёртвого/зависшего gate, а не
     /// ограничитель производительности — обязан стоять заведомо выше любого легитимного
     /// времени работы. Худший легитимный случай — replaceSelectionFallback() с выделением
-    /// на границе лимита C5 (InputCoordinator.maxConvertibleSelectionLength = 5000 символов):
+    /// на границе лимита C5 (TypeSteadyLimits.maxConvertibleSelectionLength = 5000 символов):
     /// не-BMP текст (эмодзи и т.п., 2 UTF-16 unit на символ) даёт 500 чанков по
     /// chunkUTF16(maximumCodeUnits: 20) и Thread.sleep(0.002) между ними — уже ~1 с одних
     /// только пауз, не считая самой инъекции. Если C5-лимит или размер чанка когда-нибудь
