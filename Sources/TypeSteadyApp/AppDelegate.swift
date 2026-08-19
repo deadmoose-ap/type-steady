@@ -20,6 +20,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var tapRecoveryWorkItem: DispatchWorkItem?
     private var lastAutomaticTapRecoveryAt: TimeInterval = -.infinity
 
+    /// B10: отдельный от `handleTapDisabled`/`tapRecoveryWorkItem` механизм. Он реагирует
+    /// только на неудачу CGEvent.tapCreate ВНУТРИ applySettings()/start() — то есть на старте,
+    /// когда TCC для Input Monitoring ещё не «ожил» для процесса, хотя CGPreflightListenEventAccess
+    /// уже мог вернуть true. [REN]: этот retry никогда не запускается из onTapDisabled и не
+    /// реанимирует tap, отключённый системой — это делает исключительно handleTapDisabled
+    /// со своим независимым rate-limit'ом.
+    private var startRetryWorkItem: DispatchWorkItem?
+    private var startRetryAttempt = 0
+    private static let startRetryDelays: [TimeInterval] = [0.5, 1.5, 3.0]
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         settings = AppSettings()
         permissions = PermissionManager()
@@ -56,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         eventTap.onEvent = { [weak self] event in self?.inputCoordinator.handle(event) }
         eventTap.onTapDisabled = { [weak self] reason in self?.handleTapDisabled(reason) }
+        eventTap.onGateForceClosed = { [weak self] dropped in
+            self?.logger.record(.correctionGateForcedClosed, value: dropped)
+        }
 
         hotkeys = GlobalHotkeyManager()
         hotkeys.onPerformTextAction = { [weak self] in self?.inputCoordinator.performHotkeyAction() }
@@ -85,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         tapRecoveryWorkItem?.cancel()
+        startRetryWorkItem?.cancel()
         eventTap?.stop()
         hotkeys?.stop()
         observers.forEach(NotificationCenter.default.removeObserver)
@@ -121,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.inputCoordinator.reset()
+                self?.inputCoordinator.applicationDidActivate()
                 self?.permissions.refresh()
             }
         })
@@ -141,30 +155,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lastHotkeyChoice = settings.manualHotkey
         }
         if settings.isEnabled {
+            // Любая новая попытка старта (в т.ч. повторный applySettings) отменяет
+            // предыдущую цепочку retry — не наслаиваем несколько параллельных серий.
+            cancelStartRetry()
             if !eventTap.start() {
                 logger.record(.eventTapStopped, code: 1)
+                // B10: неудача старта не должна быть беззвучной — раньше об этом не
+                // сообщалось никак, и симптом «заработало после смены хоткея» на самом
+                // деле был просто повторной попыткой eventTap.start() из applySettings().
+                feedback.show("Разрешение Input Monitoring ещё не действует", sound: false, visual: true)
+                scheduleStartRetry()
             } else {
                 logger.record(.eventTapStarted)
             }
         } else {
+            cancelStartRetry()
             eventTap.stop()
             inputCoordinator.reset()
             logger.record(.eventTapStopped)
         }
     }
 
+    /// B10: до 3 повторных попыток eventTap.start() с задержками 0.5/1.5/3 с. Каждая
+    /// попытка выполняется только если settings.isEnabled к этому моменту всё ещё true.
+    /// Полностью независим от handleTapDisabled — не трогает isGating/tapRecoveryWorkItem
+    /// и никогда не вызывается из onTapDisabled, поэтому не может участвовать в цикле
+    /// восстановления отключённого системой tap'а ([REN]).
+    private func scheduleStartRetry() {
+        guard startRetryAttempt < Self.startRetryDelays.count else {
+            feedback.show(
+                "Не удалось запустить мониторинг — нажмите «Проверить снова»",
+                sound: false,
+                visual: true
+            )
+            startRetryAttempt = 0
+            return
+        }
+        let delay = Self.startRetryDelays[startRetryAttempt]
+        startRetryAttempt += 1
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.startRetryWorkItem = nil
+            guard self.settings.isEnabled else { return }
+            if self.eventTap.start() {
+                self.logger.record(.eventTapStarted)
+                self.startRetryAttempt = 0
+            } else {
+                self.logger.record(.eventTapStopped, code: 1)
+                self.scheduleStartRetry()
+            }
+        }
+        startRetryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func cancelStartRetry() {
+        startRetryWorkItem?.cancel()
+        startRetryWorkItem = nil
+        startRetryAttempt = 0
+    }
+
     private func restartMonitor() {
         tapRecoveryWorkItem?.cancel()
         tapRecoveryWorkItem = nil
+        cancelStartRetry()
         eventTap.stop()
         permissions.refresh()
         if settings.isEnabled, !eventTap.start() {
             feedback.show("Разрешение Input Monitoring ещё не действует", sound: false, visual: true)
+            scheduleStartRetry()
         }
     }
 
     private func handleTapDisabled(_ reason: InputEventTapDisableReason) {
         logger.record(.eventTapDisabled)
+        // Гигиена, не смешивание механизмов: если по какой-то случайности параллельно
+        // тикает retry неудачного старта (B10), не даём ему пересечься с восстановлением
+        // отключённого системой tap'а — они физически не пересекаются по сценарию
+        // (start-retry работает только пока start() не вернул true), но останавливаем явно.
+        cancelStartRetry()
         eventTap.stop()
         inputCoordinator.reset()
         permissions.refresh()

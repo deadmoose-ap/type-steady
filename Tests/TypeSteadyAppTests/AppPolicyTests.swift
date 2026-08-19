@@ -44,6 +44,17 @@ struct AppPolicyTests {
         #expect(policy.isHardDenied(bundleIdentifier: "com.apple.loginwindow"))
     }
 
+    @Test func hardDenyIsCaseInsensitive() {
+        // C7: exactPasswordManagerIdentifiers содержит смешанный регистр (com.apple.Passwords,
+        // com.apple.SecurityAgent), а сравнение должно быть регистронезависимым.
+        let policy = AppPolicy()
+        #expect(policy.isHardDenied(bundleIdentifier: "com.apple.passwords"))
+        #expect(policy.isHardDenied(bundleIdentifier: "COM.APPLE.PASSWORDS"))
+        #expect(policy.isHardDenied(bundleIdentifier: "com.apple.securityagent"))
+        #expect(policy.isHardDenied(bundleIdentifier: "Com.Apple.SecurityAgent"))
+        #expect(policy.isHardDenied(bundleIdentifier: "LOCAL.TYPESTEADY.APP"))
+    }
+
     @Test func doesNotDenyOrdinaryAppleApplications() {
         // Экзакт-идентификаторы Apple не должны превращаться в блокировку префикса "com.apple." —
         // иначе под запрет случайно попадут все приложения Apple.

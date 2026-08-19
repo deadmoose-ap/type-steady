@@ -30,8 +30,12 @@ enum DetectionAggressiveness: Int, CaseIterable, Identifiable {
 
 enum HotkeyChoice: Int, CaseIterable, Identifiable {
     // Explicit raw values preserve already stored choices when new presets are added.
+    // [RAW] raw value 3 навсегда выведено из обращения: ранее принадлежало пресету
+    // optionSpace (⌥Space), удалённому в H1 — комбинация зарезервирована в системе за
+    // вызовом Gemini. Пользователи с сохранённым rawValue 3 откатываются на дефолт
+    // .controlOptionSpace через `?? .controlOptionSpace` в AppSettings.init. Никогда не
+    // переиспользовать 3 для нового пресета.
     case optionOnly = 4
-    case optionSpace = 3
     case controlOptionSpace = 0
     case controlShiftSpace = 1
     case commandOptionSpace = 2
@@ -41,7 +45,6 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .optionOnly: return "⌥ Option"
-        case .optionSpace: return "⌥Space"
         case .controlOptionSpace: return "⌃⌥Space"
         case .controlShiftSpace: return "⌃⇧Space"
         case .commandOptionSpace: return "⌘⌥Space"
@@ -51,7 +54,6 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
     var carbonModifiers: UInt32 {
         switch self {
         case .optionOnly: return UInt32(optionKey)
-        case .optionSpace: return UInt32(optionKey)
         case .controlOptionSpace: return UInt32(controlKey | optionKey)
         case .controlShiftSpace: return UInt32(controlKey | shiftKey)
         case .commandOptionSpace: return UInt32(cmdKey | optionKey)
@@ -61,7 +63,6 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
     var eventFlags: CGEventFlags {
         switch self {
         case .optionOnly: return [.maskAlternate]
-        case .optionSpace: return [.maskAlternate]
         case .controlOptionSpace: return [.maskControl, .maskAlternate]
         case .controlShiftSpace: return [.maskControl, .maskShift]
         case .commandOptionSpace: return [.maskCommand, .maskAlternate]

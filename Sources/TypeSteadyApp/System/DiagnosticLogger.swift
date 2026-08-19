@@ -13,6 +13,9 @@ enum DiagnosticEvent: String {
     case selectionUnavailable
     case layoutRefresh
     case permissionState
+    /// Correction gate был закрыт принудительно watchdog'ом или дедлайном итераций,
+    /// а не штатным опустошением очереди захваченных событий (см. code review B2).
+    case correctionGateForcedClosed
 }
 
 final class DiagnosticLogger {

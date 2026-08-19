@@ -20,11 +20,13 @@ enum SelfTestRunner {
         check(transliterator.candidates(for: "spasibo").contains("спасибо"), "transliteration.digraphs")
         check(transliterator.candidates(for: "приvet").isEmpty, "transliteration.mixed.backlog")
         check(LocalLexicon().contains("привет", language: .russian), "lexicon.bundle-resource")
-        check(HotkeyChoice.optionSpace.carbonModifiers == UInt32(optionKey), "hotkey.option-space")
+        check(HotkeyChoice.controlShiftSpace.carbonModifiers == UInt32(controlKey | shiftKey), "hotkey.control-shift-space")
         check(
-            HotkeyChoice.optionSpace.matches(keyCode: UInt16(kVK_Space), flags: [.maskAlternate]),
-            "hotkey.option-space-event-match"
+            HotkeyChoice.controlShiftSpace.matches(keyCode: UInt16(kVK_Space), flags: [.maskControl, .maskShift]),
+            "hotkey.control-shift-space-event-match"
         )
+        // [RAW] rawValue 3 навсегда выведено из обращения после удаления optionSpace (H1).
+        check(HotkeyChoice(rawValue: 3) == nil, "hotkey.raw-value-3-retired")
         check(HotkeyChoice(rawValue: 0) == .controlOptionSpace, "hotkey.raw-value-0")
         check(HotkeyChoice(rawValue: 1) == .controlShiftSpace, "hotkey.raw-value-1")
         check(HotkeyChoice(rawValue: 2) == .commandOptionSpace, "hotkey.raw-value-2")

@@ -75,6 +75,70 @@ struct InputSafetyTests {
         #expect(!released)
     }
 
+    // B2: если beginCorrectionGate() не сопровождается штатным finishCorrectionGate()
+    // (например, краш/зависание между begin и defer в CorrectionCoordinator), watchdog
+    // обязан закрыть gate принудительно — иначе клавиатура перестанет работать во всех
+    // приложениях, пока TypeSteady не будет убит. Дедлайн watchdog'а — 3 с (поднят в R3
+    // пост-ревью спринта 3, см. InputEventTap.correctionGateWatchdogTimeout), поэтому тест
+    // сознательно ждёт дольше.
+    @Test func watchdogForceClosesAbandonedGate() async {
+        let tap = InputEventTap()
+        await confirmation("gate force-closed by watchdog") { confirmed in
+            tap.onGateForceClosed = { dropped in
+                #expect(dropped == 0)
+                confirmed()
+            }
+            tap.beginCorrectionGate()
+            // Намеренно не вызываем finishCorrectionGate() — имитация зависшего пути.
+            try? await Task.sleep(nanoseconds: 3_300_000_000)
+        }
+    }
+
+    // B2: после принудительного закрытия gate последующий штатный цикл
+    // begin/finishCorrectionGate обязан отработать нормально — isGating не должен
+    // "залипнуть" в true.
+    @Test func gateReopensNormallyAfterForcedClosure() async {
+        let tap = InputEventTap()
+        await confirmation("gate force-closed by watchdog") { confirmed in
+            tap.onGateForceClosed = { _ in confirmed() }
+            tap.beginCorrectionGate()
+            try? await Task.sleep(nanoseconds: 3_300_000_000)
+        }
+
+        var replayed = false
+        tap.beginCorrectionGate()
+        tap.finishCorrectionGate { _ in replayed = true }
+        #expect(!replayed) // очередь пуста — replay не вызывается, но и не зависает.
+    }
+
+    // R3 (пост-ревью спринта 3): watchdog — аварийный клапан против мёртвого/зависшего gate,
+    // а не ограничитель производительности. Легитимная операция (например,
+    // replaceSelectionFallback на границе лимита C5 — до ~1 с одних пауз между чанками)
+    // не должна быть прервана раньше времени. Ждём заметно дольше старого таймаута (1 с),
+    // но меньше нового (3 с), и проверяем, что force-close не сработал и штатное закрытие
+    // gate потом отрабатывает без потери событий (replay не вызывается на пустой очереди).
+    @Test func legitimateLongGateIsNotClosedEarlyByWatchdog() async {
+        final class ForceClosedFlag: @unchecked Sendable {
+            var value = false
+        }
+        let flag = ForceClosedFlag()
+        let tap = InputEventTap()
+        tap.onGateForceClosed = { _ in flag.value = true }
+
+        tap.beginCorrectionGate()
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        #expect(!flag.value)
+
+        var replayed = false
+        tap.finishCorrectionGate { _ in replayed = true }
+        #expect(!replayed)
+
+        // Дождаться момента, когда сработал бы старый (уже отменённый finishCorrectionGate)
+        // watchdog, и убедиться, что force-close не произошёл задним числом.
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        #expect(!flag.value)
+    }
+
     private func snapshot(
         type: CGEventType,
         keyCode: UInt16 = UInt16(kVK_Option),

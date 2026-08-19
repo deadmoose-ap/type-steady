@@ -29,7 +29,7 @@ open "dist/TypeSteady.app"
 
 При первом запуске выдайте приложению разрешения Accessibility и Input Monitoring. Для локально подписанной сборки после пересборки macOS иногда запрашивает их повторно.
 
-По умолчанию `Control+Option+Space` преобразует выделенный текст, а при отсутствии выделения исправляет последнее слово. В настройках также доступны чистый `Option`, `Option+Space`, `Control+Shift+Space` и `Command+Option+Space`.
+По умолчанию `Control+Option+Space` преобразует выделенный текст, а при отсутствии выделения исправляет последнее слово. В настройках также доступны чистый `Option`, `Control+Shift+Space` и `Command+Option+Space`.
 
 ## Сборка
 

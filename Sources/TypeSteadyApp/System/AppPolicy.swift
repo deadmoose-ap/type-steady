@@ -3,6 +3,9 @@ import Foundation
 struct AppPolicy {
     static let typeSteadyBundleIdentifier = "local.typesteady.app"
 
+    // C7: сравнение регистронезависимое — normalize в isHardDenied приводит входной
+    // bundleIdentifier к нижнему регистру, поэтому и коллекции здесь должны быть заранее
+    // приведены к нижнему регистру, иначе Set.contains/hasPrefix молча перестанут совпадать.
     private let passwordManagerPrefixes = [
         "com.1password.",
         "com.agilebits.",
@@ -19,12 +22,15 @@ struct AppPolicy {
 
     // Точные идентификаторы системных компонентов Apple, а не префиксы: префикс "com.apple."
     // случайно заблокировал бы все приложения Apple, включая Safari и TextEdit.
+    // Приведены к нижнему регистру заранее — исходные ID (com.apple.Passwords,
+    // com.apple.SecurityAgent) используют смешанный регистр, а сравнение в isHardDenied
+    // регистронезависимое (см. C7).
     private let exactPasswordManagerIdentifiers: Set<String> = [
         // Штатное приложение «Пароли» в macOS 15+ — самый частый случай.
-        "com.apple.Passwords",
+        "com.apple.passwords",
         "com.apple.keychainaccess",
         // Системные диалоги авторизации.
-        "com.apple.SecurityAgent",
+        "com.apple.securityagent",
         "com.apple.loginwindow"
     ]
 
@@ -43,9 +49,13 @@ struct AppPolicy {
     ]
 
     func isHardDenied(bundleIdentifier: String) -> Bool {
-        bundleIdentifier == Self.typeSteadyBundleIdentifier ||
-            exactPasswordManagerIdentifiers.contains(bundleIdentifier) ||
-            passwordManagerPrefixes.contains { bundleIdentifier.hasPrefix($0) }
+        // C7: нормализуем регистр здесь, а не полагаемся на то, что вызывающий код всегда
+        // передаёт каноническую форму — иначе будущее приведение к нижнему регистру на
+        // пути вызова молча отключит hard deny для системных компонентов Apple.
+        let normalized = bundleIdentifier.lowercased()
+        return normalized == Self.typeSteadyBundleIdentifier.lowercased() ||
+            exactPasswordManagerIdentifiers.contains(normalized) ||
+            passwordManagerPrefixes.contains { normalized.hasPrefix($0) }
     }
 
     func isCodeEditor(bundleIdentifier: String) -> Bool {

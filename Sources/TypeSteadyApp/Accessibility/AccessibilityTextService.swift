@@ -31,6 +31,16 @@ struct AccessibilitySelection {
 
 @MainActor
 final class AccessibilityTextService {
+    /// B3: без явного таймаута действует таймаут AX по умолчанию — 6 секунд. Зависшее или
+    /// занятое фронтальное приложение способно застопорить главный поток на секунды при
+    /// каждом обращении. 0.1 с достаточно для локального межпроцессного AX-запроса.
+    private static let messagingTimeout: Float = 0.1
+    /// B3: результат focusedElementIsSecure() дёргается синхронно на каждой первой клавише
+    /// токена — кэшируем его на короткое время по PID, инвалидируя явно при смене
+    /// активного приложения и при клике мыши (см. InputCoordinator).
+    private static let secureCacheLifetime: TimeInterval = 0.5
+    private var secureCache: (pid: pid_t, timestamp: TimeInterval, isSecure: Bool)?
+
     func currentSelection() throws -> AccessibilitySelection {
         // [SEC] Барьер должен стоять первой строкой: при активном Secure Input (Terminal с
         // Secure Keyboard Entry, системное окно авторизации) выделение вообще не должно
@@ -45,6 +55,7 @@ final class AccessibilityTextService {
             bundleIdentifier: app.bundleIdentifier ?? "unknown"
         )
         let applicationElement = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(applicationElement, Self.messagingTimeout)
         guard let focused = copyElementAttribute(applicationElement, kAXFocusedUIElementAttribute) else {
             throw AccessibilityTextError.noFocusedElement
         }
@@ -75,9 +86,31 @@ final class AccessibilityTextService {
 
     func focusedElementIsSecure() -> Bool {
         guard let app = NSWorkspace.shared.frontmostApplication else { return true }
-        let applicationElement = AXUIElementCreateApplication(app.processIdentifier)
-        guard let focused = copyElementAttribute(applicationElement, kAXFocusedUIElementAttribute) else { return false }
-        return isSecure(focused)
+        let pid = app.processIdentifier
+        let now = ProcessInfo.processInfo.systemUptime
+        // Кэш валиден только для того же PID и не старше secureCacheLifetime — иначе
+        // всегда пересчитываем, чтобы не ослаблять защиту устаревшим результатом.
+        if let cache = secureCache, cache.pid == pid, now - cache.timestamp < Self.secureCacheLifetime {
+            return cache.isSecure
+        }
+        let applicationElement = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(applicationElement, Self.messagingTimeout)
+        guard let focused = copyElementAttribute(applicationElement, kAXFocusedUIElementAttribute) else {
+            // Не удалось надёжно определить элемент — не кэшируем сомнительный результат.
+            secureCache = nil
+            return false
+        }
+        let result = isSecure(focused)
+        secureCache = (pid: pid, timestamp: now, isSecure: result)
+        return result
+    }
+
+    /// Сбрасывает кэш focusedElementIsSecure(). Вызывать при смене активного приложения
+    /// и при клике мыши — оба события могут сменить фокусированный элемент раньше, чем
+    /// истечёт secureCacheLifetime (fail closed: лучше пересчитать лишний раз, чем
+    /// использовать устаревший результат).
+    func invalidateSecureCache() {
+        secureCache = nil
     }
 
     private func copyElementAttribute(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {

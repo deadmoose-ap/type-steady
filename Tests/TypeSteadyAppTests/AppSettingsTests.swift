@@ -39,7 +39,7 @@ struct AppSettingsTests {
         settings.diagnostics = true
         settings.strictCodeEditors = false
         settings.aggressiveness = .conservative
-        settings.manualHotkey = .optionSpace
+        settings.manualHotkey = .controlShiftSpace
         settings.englishLayoutID = "en.test"
         settings.russianLayoutID = "ru.test"
         settings.excludedBundleIDs = "COM.EXAMPLE.APP"
@@ -56,7 +56,7 @@ struct AppSettingsTests {
         #expect(restored.diagnostics)
         #expect(!restored.strictCodeEditors)
         #expect(restored.aggressiveness == .conservative)
-        #expect(restored.manualHotkey == .optionSpace)
+        #expect(restored.manualHotkey == .controlShiftSpace)
         #expect(restored.englishLayoutID == "en.test")
         #expect(restored.russianLayoutID == "ru.test")
         #expect(restored.excludedBundleIDSet == ["com.example.app"])
@@ -77,6 +77,21 @@ struct AppSettingsTests {
             settings.visualFeedback.toggle()
             NotificationCenter.default.removeObserver(observer)
         }
+    }
+
+    // H1/[RAW]: пользователи, у которых в UserDefaults сохранено rawValue 3 (удалённый
+    // пресет optionSpace), должны откатиться на дефолт .controlOptionSpace, а не крашнуться
+    // и не получить неопределённый выбор — HotkeyChoice(rawValue: 3) возвращает nil, и
+    // `?? .controlOptionSpace` в AppSettings.init обязан это покрывать.
+    @Test func migratesRemovedOptionSpaceRawValueToDefault() {
+        let (defaults, name) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(3, forKey: "manualHotkey")
+
+        #expect(HotkeyChoice(rawValue: 3) == nil)
+
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.manualHotkey == .controlOptionSpace)
     }
 
     @Test func aggressivenessMarginsAreOrdered() {

@@ -22,7 +22,7 @@ Release gate последовательно запускает полный Swif
 | Выделенный текст | оба направления, сохранение неизвестных символов и отказ для непреобразуемого текста |
 | Транслитерация | базовые слова, диграфы, регистр, лимит кандидатов и недопустимый ввод |
 | Синтез Unicode | chunking BMP/emoji без разрыва surrogate pair |
-| Хоткеи | стабильные raw values, точное Carbon/event-tap соответствие, чистый Option, отмена modifier-only действия при chord/key input, Option+Space и Control+Shift+Space |
+| Хоткеи | стабильные raw values (включая навсегда выведенное из обращения rawValue 3), точное Carbon/event-tap соответствие, чистый Option, отмена modifier-only действия при chord/key input, Control+Shift+Space |
 | Безопасность event tap | классификация timeout/revocation и подавление повторных disable-уведомлений до нового запуска |
 | Разрешения | актуальные Privacy & Security URL и строго ограниченный набор TCC-сервисов для ремонта |
 | Accessibility errors и модели | локализованные ошибки, классификация букв/цифр/границ и названия языков |

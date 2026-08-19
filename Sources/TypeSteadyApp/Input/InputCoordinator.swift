@@ -38,6 +38,13 @@ final class InputCoordinator {
     /// Верхняя граница длины преобразуемого выделения. Fallback-путь синтезирует Unicode-события
     /// чанками с паузами — без лимита выделение крупного документа блокирует main thread на
     /// секунды (см. code review C5).
+    ///
+    /// R3 (пост-ревью спринта 3): этот лимит — верхняя граница для
+    /// InputEventTap.correctionGateWatchdogTimeout (весь fallback-путь работает внутри
+    /// correction gate). При увеличении этого значения или размера чанка в
+    /// EventSynthesizer.chunkUTF16 пересчитать худшее легитимное время инъекции и при
+    /// необходимости поднять watchdog-таймаут — иначе watchdog начнёт обрывать легитимную
+    /// операцию и терять пользовательский ввод.
     private static let maxConvertibleSelectionLength = 5000
 
     init(
@@ -63,6 +70,9 @@ final class InputCoordinator {
         }
         if event.type == .flagsChanged { return }
         if event.type == .leftMouseDown || event.type == .rightMouseDown || event.type == .otherMouseDown {
+            // Клик мог сменить фокусированный элемент — кэш focusedElementIsSecure() (B3)
+            // не должен пережить его дольше своего TTL.
+            accessibility.invalidateSecureCache()
             reset()
             return
         }
@@ -197,6 +207,13 @@ final class InputCoordinator {
             logger.record(.selectionUnavailable)
             onMessage?(error.localizedDescription)
         }
+    }
+
+    /// Смена активного приложения могла сменить фокусированный элемент — кэш
+    /// focusedElementIsSecure() (B3) инвалидируется явно, а не по истечении TTL.
+    func applicationDidActivate() {
+        accessibility.invalidateSecureCache()
+        reset()
     }
 
     func reset() {

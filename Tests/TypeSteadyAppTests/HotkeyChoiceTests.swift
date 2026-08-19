@@ -3,19 +3,19 @@ import Testing
 @testable import TypeSteadyApp
 
 struct HotkeyChoiceTests {
-    @Test func optionSpacePreset() {
-        #expect(HotkeyChoice.optionSpace.carbonModifiers == UInt32(optionKey))
-        #expect(HotkeyChoice.optionSpace.eventFlags == [.maskAlternate])
-        #expect(HotkeyChoice.optionSpace.title == "⌥Space")
-        #expect(HotkeyChoice.optionSpace.matches(keyCode: UInt16(kVK_Space), flags: [.maskAlternate]))
-    }
-
     @Test func storedRawValuesRemainStable() {
         #expect(HotkeyChoice(rawValue: 0) == .controlOptionSpace)
         #expect(HotkeyChoice(rawValue: 1) == .controlShiftSpace)
         #expect(HotkeyChoice(rawValue: 2) == .commandOptionSpace)
-        #expect(HotkeyChoice(rawValue: 3) == .optionSpace)
         #expect(HotkeyChoice(rawValue: 4) == .optionOnly)
+    }
+
+    // H1/[RAW]: rawValue 3 принадлежал удалённому пресету optionSpace (⌥Space, зарезервирован
+    // системой за Gemini) и никогда не переиспользуется. HotkeyChoice(rawValue: 3) обязан
+    // возвращать nil, а AppSettings.init обязан откатывать таких пользователей на дефолт —
+    // проверено отдельно в AppSettingsTests.migratesRemovedOptionSpaceRawValueToDefault.
+    @Test func removedOptionSpaceRawValueNoLongerResolves() {
+        #expect(HotkeyChoice(rawValue: 3) == nil)
     }
 
     @Test func everyPresetMatchesOnlyItsExactShortcut() {
