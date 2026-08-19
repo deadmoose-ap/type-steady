@@ -142,7 +142,7 @@ TypeSteady не запрашивает:
 - приложение добавлено пользователем в исключения;
 - PID изменился между завершением слова и коррекцией.
 
-Password managers находятся в hard deny и не могут быть включены обратно настройкой. Текущие префиксы включают 1Password/AgileBits, LastPass и Bitwarden.
+Password managers находятся в hard deny и не могут быть включены обратно настройкой. Текущие префиксы включают 1Password/AgileBits, LastPass, Bitwarden, Dashlane, Keeper, NordPass, Proton Pass, KeePassXC, Enpass и Strongbox. Отдельно, точными идентификаторами (не префиксами, чтобы не заблокировать все приложения Apple разом), в hard deny включены системные компоненты Apple: штатное приложение «Пароли» (`com.apple.Passwords`), Keychain Access (`com.apple.keychainaccess`), диалоги авторизации `SecurityAgent` и `loginwindow`.
 
 Ограничение платформы: стороннее приложение может ошибочно не объявить собственное password-поле защищённым. Для таких приложений следует добавить bundle identifier в исключения.
 

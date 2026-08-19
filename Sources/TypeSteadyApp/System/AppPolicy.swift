@@ -7,7 +7,25 @@ struct AppPolicy {
         "com.1password.",
         "com.agilebits.",
         "com.lastpass.",
-        "com.bitwarden."
+        "com.bitwarden.",
+        "com.dashlane.",
+        "com.keepersecurity.",
+        "com.nordpass.",
+        "me.proton.pass.",
+        "org.keepassxc.",
+        "io.enpass.",
+        "com.strongbox."
+    ]
+
+    // Точные идентификаторы системных компонентов Apple, а не префиксы: префикс "com.apple."
+    // случайно заблокировал бы все приложения Apple, включая Safari и TextEdit.
+    private let exactPasswordManagerIdentifiers: Set<String> = [
+        // Штатное приложение «Пароли» в macOS 15+ — самый частый случай.
+        "com.apple.Passwords",
+        "com.apple.keychainaccess",
+        // Системные диалоги авторизации.
+        "com.apple.SecurityAgent",
+        "com.apple.loginwindow"
     ]
 
     private let codeEditorIdentifiers: Set<String> = [
@@ -26,6 +44,7 @@ struct AppPolicy {
 
     func isHardDenied(bundleIdentifier: String) -> Bool {
         bundleIdentifier == Self.typeSteadyBundleIdentifier ||
+            exactPasswordManagerIdentifiers.contains(bundleIdentifier) ||
             passwordManagerPrefixes.contains { bundleIdentifier.hasPrefix($0) }
     }
 

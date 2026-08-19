@@ -55,16 +55,21 @@ final class PermissionManager: ObservableObject {
 
     func repairStaleRecords() {
         let bundleIdentifier = Bundle.main.bundleIdentifier ?? AppPolicy.typeSteadyBundleIdentifier
-        do {
-            for permission in PrivacyPermission.allCases {
-                try reset(permission, bundleIdentifier: bundleIdentifier)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                // Последовательный сброс: сперва Accessibility, затем ListenEvent — область
+                // не расширяется, только собственный bundle ID (см. [SEC]).
+                for permission in PrivacyPermission.allCases {
+                    try await self.reset(permission, bundleIdentifier: bundleIdentifier)
+                }
+                self.refresh()
+                self.repairMessage = "Старые записи удалены. Подтвердите Accessibility, затем Input Monitoring."
+                self.requestAccessibility()
+            } catch {
+                self.repairMessage = "Не удалось сбросить записи автоматически. Удалите TypeSteady кнопкой «−» в обоих разделах macOS."
+                self.openAccessibilitySettings()
             }
-            refresh()
-            repairMessage = "Старые записи удалены. Подтвердите Accessibility, затем Input Monitoring."
-            requestAccessibility()
-        } catch {
-            repairMessage = "Не удалось сбросить записи автоматически. Удалите TypeSteady кнопкой «−» в обоих разделах macOS."
-            openAccessibilitySettings()
         }
     }
 
@@ -89,13 +94,24 @@ final class PermissionManager: ObservableObject {
         }
     }
 
-    private func reset(_ permission: PrivacyPermission, bundleIdentifier: String) throws {
+    /// Асинхронное ожидание завершения `tccutil` через `terminationHandler` — раньше
+    /// `waitUntilExit()` блокировал главный поток на @MainActor (C4).
+    private func reset(_ permission: PrivacyPermission, bundleIdentifier: String) async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
         process.arguments = ["reset", permission.rawValue, bundleIdentifier]
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
+        let status: Int32 = try await withCheckedThrowingContinuation { continuation in
+            process.terminationHandler = { finished in
+                continuation.resume(returning: finished.terminationStatus)
+            }
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                continuation.resume(throwing: error)
+            }
+        }
+        guard status == 0 else {
             throw CocoaError(.executableRuntimeMismatch)
         }
     }

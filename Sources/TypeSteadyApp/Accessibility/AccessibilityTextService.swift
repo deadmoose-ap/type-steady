@@ -1,5 +1,6 @@
 import ApplicationServices
 import AppKit
+import Carbon
 import Foundation
 
 enum AccessibilityTextError: LocalizedError {
@@ -31,6 +32,10 @@ struct AccessibilitySelection {
 @MainActor
 final class AccessibilityTextService {
     func currentSelection() throws -> AccessibilitySelection {
+        // [SEC] Барьер должен стоять первой строкой: при активном Secure Input (Terminal с
+        // Secure Keyboard Entry, системное окно авторизации) выделение вообще не должно
+        // попадать в память процесса, даже до проверки subrole конкретного элемента.
+        guard !IsSecureEventInputEnabled() else { throw AccessibilityTextError.secureField }
         guard AXIsProcessTrusted() else { throw AccessibilityTextError.permissionMissing }
         guard let app = NSWorkspace.shared.frontmostApplication else {
             throw AccessibilityTextError.noFocusedElement
@@ -80,7 +85,9 @@ final class AccessibilityTextService {
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
               let value,
               CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeBitCast(value, to: AXUIElement.self)
+        // Тип уже верифицирован через CFGetTypeID, поэтому безопасное приведение
+        // эквивалентно unsafeBitCast, но не обходит проверки ARC/типов.
+        return (value as! AXUIElement)
     }
 
     private func isSecure(_ element: AXUIElement) -> Bool {

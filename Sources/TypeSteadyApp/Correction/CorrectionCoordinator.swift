@@ -24,8 +24,12 @@ final class CorrectionCoordinator {
     private static let userInitiatedReleaseTimeout: TimeInterval = 2.0
     /// Автоматическая коррекция на границе слова — пользователь модификаторы не держит.
     private static let automaticReleaseTimeout: TimeInterval = 0.35
+    /// Docs/PRIVACY.md: undo доступен максимум восемь секунд — после истечения запись
+    /// обнуляется таймером, а не только проверкой возраста в момент использования.
+    private static let lastCorrectionLifetime: TimeInterval = 8
 
     private(set) var lastCorrection: LastCorrection?
+    private var lastCorrectionExpiry: DispatchWorkItem?
 
     init(
         eventTap: InputEventTap,
@@ -93,7 +97,7 @@ final class CorrectionCoordinator {
             }
             try synthesizer.injectUnicode(variant.boundary)
             succeeded = true
-            lastCorrection = LastCorrection(
+            setLastCorrection(LastCorrection(
                 original: proposal.original,
                 replacement: proposal.replacement,
                 boundary: variant.boundary,
@@ -101,7 +105,7 @@ final class CorrectionCoordinator {
                 targetLayoutID: targetLayoutID,
                 context: context,
                 completedAt: ProcessInfo.processInfo.systemUptime
-            )
+            ))
             logger.record(.correctionAccepted, value: proposal.replacement.count)
             return true
         } catch {
@@ -135,7 +139,7 @@ final class CorrectionCoordinator {
         do {
             try synthesizer.sendBackspaces(last.replacement.count + last.boundary.count)
             try synthesizer.injectUnicode(last.original + last.boundary)
-            lastCorrection = nil
+            clearUndo()
             succeeded = true
             return true
         } catch {
@@ -169,7 +173,22 @@ final class CorrectionCoordinator {
     }
 
     func clearUndo() {
+        lastCorrectionExpiry?.cancel()
+        lastCorrectionExpiry = nil
         lastCorrection = nil
+    }
+
+    /// Устанавливает новую запись undo и планирует её обнуление через
+    /// `lastCorrectionLifetime` — предыдущий таймер отменяется, чтобы данные
+    /// прошлой коррекции не пережили дедлайн новой.
+    private func setLastCorrection(_ correction: LastCorrection) {
+        lastCorrectionExpiry?.cancel()
+        lastCorrection = correction
+        let work = DispatchWorkItem { [weak self] in
+            self?.lastCorrection = nil
+        }
+        lastCorrectionExpiry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.lastCorrectionLifetime, execute: work)
     }
 
     private func preflight(context: AppContext) -> Bool {

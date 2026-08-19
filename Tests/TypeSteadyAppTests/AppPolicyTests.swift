@@ -25,6 +25,35 @@ struct AppPolicyTests {
         #expect(!policy.isHardDenied(bundleIdentifier: "com.example.editor"))
     }
 
+    @Test func hardDeniesExpandedPasswordManagerSet() {
+        let policy = AppPolicy()
+        #expect(policy.isHardDenied(bundleIdentifier: "com.dashlane.Dashlane"))
+        #expect(policy.isHardDenied(bundleIdentifier: "com.keepersecurity.KeeperMac"))
+        #expect(policy.isHardDenied(bundleIdentifier: "com.nordpass.NordPass"))
+        #expect(policy.isHardDenied(bundleIdentifier: "me.proton.pass.electron"))
+        #expect(policy.isHardDenied(bundleIdentifier: "org.keepassxc.keepassxc"))
+        #expect(policy.isHardDenied(bundleIdentifier: "io.enpass.Enpass"))
+        #expect(policy.isHardDenied(bundleIdentifier: "com.strongbox.strongbox-mac"))
+    }
+
+    @Test func hardDeniesAppleSystemAuthenticationComponentsByExactID() {
+        let policy = AppPolicy()
+        #expect(policy.isHardDenied(bundleIdentifier: "com.apple.Passwords"))
+        #expect(policy.isHardDenied(bundleIdentifier: "com.apple.keychainaccess"))
+        #expect(policy.isHardDenied(bundleIdentifier: "com.apple.SecurityAgent"))
+        #expect(policy.isHardDenied(bundleIdentifier: "com.apple.loginwindow"))
+    }
+
+    @Test func doesNotDenyOrdinaryAppleApplications() {
+        // Экзакт-идентификаторы Apple не должны превращаться в блокировку префикса "com.apple." —
+        // иначе под запрет случайно попадут все приложения Apple.
+        let policy = AppPolicy()
+        #expect(!policy.isHardDenied(bundleIdentifier: "com.apple.Safari"))
+        #expect(!policy.isHardDenied(bundleIdentifier: "com.apple.TextEdit"))
+        #expect(!policy.isHardDenied(bundleIdentifier: "com.apple.dt.Xcode"))
+        #expect(!policy.isHardDenied(bundleIdentifier: "com.apple.Terminal"))
+    }
+
     @Test func hardDeniesTypeSteadySettingsItself() {
         let policy = AppPolicy()
         #expect(policy.isHardDenied(bundleIdentifier: "local.typesteady.app"))

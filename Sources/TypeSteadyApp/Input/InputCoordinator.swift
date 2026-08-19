@@ -23,10 +23,22 @@ final class InputCoordinator {
     private let appPolicy = AppPolicy()
     private let selectedTextConverter = SelectedTextConverter()
 
+    /// Docs/PRIVACY.md: ручная кандидатура живёт максимум 12 секунд — после истечения
+    /// поле обнуляется таймером, а не только проверкой возраста в момент использования.
+    private static let manualCandidateLifetime: TimeInterval = 12
+
     private var state = TypingStateMachine()
     private var modifierOnlyHotkey = ModifierOnlyHotkeyRecognizer()
     private var pendingFlush: DispatchWorkItem?
-    private var manualCandidate: ManualCandidate?
+    private var manualCandidate: ManualCandidate? {
+        didSet { scheduleManualCandidateExpiry() }
+    }
+    private var manualCandidateExpiry: DispatchWorkItem?
+
+    /// Верхняя граница длины преобразуемого выделения. Fallback-путь синтезирует Unicode-события
+    /// чанками с паузами — без лимита выделение крупного документа блокирует main thread на
+    /// секунды (см. code review C5).
+    private static let maxConvertibleSelectionLength = 5000
 
     init(
         settings: AppSettings,
@@ -242,6 +254,13 @@ final class InputCoordinator {
             onMessage?("Это приложение исключено из преобразования")
             return
         }
+        // Ветка 1.5: выделение слишком велико — fallback-путь синтезировал бы десятки тысяч
+        // Unicode-событий чанками с Thread.sleep, блокируя main thread на секунды (C5).
+        guard selection.text.count <= Self.maxConvertibleSelectionLength else {
+            logger.record(.selectionUnavailable, code: 13)
+            onMessage?("Выделение слишком большое для преобразования")
+            return
+        }
         // Ветка 2: для активной раскладки не настроена пара English/Russian.
         guard let pair = layoutCatalog.selectedPair(settings: settings) else {
             logger.record(.selectionUnavailable, code: 11)
@@ -304,6 +323,20 @@ final class InputCoordinator {
             logger.record(.selectionUnavailable)
             onMessage?(error.localizedDescription)
         }
+    }
+
+    /// Отменяет предыдущий таймер и, если появилась новая кандидатура, планирует её
+    /// обнуление через `manualCandidateLifetime` — симметрично `lastCorrection` в
+    /// `CorrectionCoordinator`.
+    private func scheduleManualCandidateExpiry() {
+        manualCandidateExpiry?.cancel()
+        manualCandidateExpiry = nil
+        guard manualCandidate != nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.manualCandidate = nil
+        }
+        manualCandidateExpiry = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.manualCandidateLifetime, execute: work)
     }
 
     private func physicalKey(from event: InputEventSnapshot) -> PhysicalKey {
