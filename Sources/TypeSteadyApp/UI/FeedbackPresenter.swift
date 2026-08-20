@@ -5,12 +5,24 @@ final class FeedbackPresenter {
     private var panel: NSPanel?
     private var dismissWork: DispatchWorkItem?
 
-    func show(_ message: String, sound: Bool, visual: Bool) {
+    /// F2: короткая длительность — как было раньше, для «English → Русский» этого достаточно
+    /// (значение по умолчанию, чтобы существующие вызовы без явного duration не изменили поведение).
+    /// `nonisolated`: значение — константа времени компиляции без побочных состояний, а
+    /// значения по умолчанию у параметров функций вычисляются в неизолированном контексте —
+    /// MainActor-изолированная static let здесь не годится (Swift 6 language mode).
+    nonisolated static let shortDuration: TimeInterval = 0.9
+    /// F2: длинная длительность — для сообщений об отказе (onMessage). Причина отказа —
+    /// не просто короткое слово, а текст, который нужно успеть прочитать.
+    nonisolated static let longDuration: TimeInterval = 3.5
+
+    func show(_ message: String, sound: Bool, visual: Bool, duration: TimeInterval = shortDuration) {
         if sound {
             NSSound(named: NSSound.Name("Tink"))?.play()
         }
         guard visual else { return }
 
+        // F2: отменяем предыдущий отложенный dismiss ПЕРЕД планированием нового — иначе
+        // короткое сообщение после длинного (или наоборот) унаследует чужой таймер.
         dismissWork?.cancel()
         let panel = panel ?? makePanel()
         self.panel = panel
@@ -28,7 +40,7 @@ final class FeedbackPresenter {
 
         let work = DispatchWorkItem { [weak panel] in panel?.orderOut(nil) }
         dismissWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
     }
 
     /// D8: раньше плашка всегда позиционировалась по NSScreen.main (экран с активным

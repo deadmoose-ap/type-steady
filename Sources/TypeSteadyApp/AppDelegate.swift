@@ -60,12 +60,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.feedback.show(
                 "\(source.displayName) → \(target.displayName)",
                 sound: self.settings.soundFeedback,
-                visual: self.settings.visualFeedback
+                visual: self.settings.visualFeedback,
+                duration: FeedbackPresenter.shortDuration
             )
         }
+        // F1/F2/R9: единое правило по всему AppDelegate для feedback.show(...). Канал УСПЕХА
+        // (onCorrection, «English → Русский») — управляется settings.visualFeedback,
+        // shortDuration. Любое сообщение об ОТКАЗЕ или остановке (onMessage, а также все
+        // сообщения о неудаче/остановке мониторинга ниже по файлу) — visual: true,
+        // longDuration, БЕЗ исключений: они редки, но именно они говорят пользователю,
+        // что коррекция или весь мониторинг молча не работают, и должны быть видны и успевать
+        // прочитаться независимо от тумблера.
         inputCoordinator.onMessage = { [weak self] message in
             guard let self else { return }
-            self.feedback.show(message, sound: false, visual: self.settings.visualFeedback)
+            self.feedback.show(message, sound: false, visual: true, duration: FeedbackPresenter.longDuration)
         }
 
         eventTap.onEvent = { [weak self] event in self?.inputCoordinator.handle(event) }
@@ -179,7 +187,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // B10: неудача старта не должна быть беззвучной — раньше об этом не
                 // сообщалось никак, и симптом «заработало после смены хоткея» на самом
                 // деле был просто повторной попыткой eventTap.start() из applySettings().
-                feedback.show("Разрешение Input Monitoring ещё не действует", sound: false, visual: true)
+                feedback.show(
+                    "Разрешение Input Monitoring ещё не действует",
+                    sound: false,
+                    visual: true,
+                    duration: FeedbackPresenter.longDuration
+                )
                 scheduleStartRetry()
             } else {
                 logger.record(.eventTapStarted)
@@ -202,7 +215,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             feedback.show(
                 "Не удалось запустить мониторинг — нажмите «Проверить снова»",
                 sound: false,
-                visual: true
+                visual: true,
+                duration: FeedbackPresenter.longDuration
             )
             startRetryAttempt = 0
             return
@@ -238,7 +252,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         eventTap.stop()
         permissions.refresh()
         if settings.isEnabled, !eventTap.start() {
-            feedback.show("Разрешение Input Monitoring ещё не действует", sound: false, visual: true)
+            feedback.show(
+                "Разрешение Input Monitoring ещё не действует",
+                sound: false,
+                visual: true,
+                duration: FeedbackPresenter.longDuration
+            )
             scheduleStartRetry()
         }
     }
@@ -258,7 +277,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             feedback.show(
                 "Мониторинг остановлен после изменения разрешений",
                 sound: false,
-                visual: settings.visualFeedback
+                visual: true,
+                duration: FeedbackPresenter.longDuration
             )
             return
         }
@@ -271,7 +291,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             feedback.show(
                 "Мониторинг остановлен — нажмите «Проверить снова»",
                 sound: false,
-                visual: settings.visualFeedback
+                visual: true,
+                duration: FeedbackPresenter.longDuration
             )
             return
         }
@@ -287,7 +308,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.feedback.show(
                     "Мониторинг остановлен — проверьте разрешения",
                     sound: false,
-                    visual: self.settings.visualFeedback
+                    visual: true,
+                    duration: FeedbackPresenter.longDuration
                 )
                 return
             }

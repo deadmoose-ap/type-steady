@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Carbon
 import Foundation
 
@@ -280,6 +281,17 @@ final class CorrectionCoordinator {
               !appPolicy.isHardDenied(bundleIdentifier: context.bundleIdentifier),
               let frontmost = NSWorkspace.shared.frontmostApplication,
               frontmost.processIdentifier == context.processIdentifier else { return false }
+        // F3: без доверенного Accessibility-статуса CGEventPost молча ничего не делает —
+        // без этой проверки apply() доходил бы до конца, писал correctionAccepted и создавал
+        // запись undo, хотя на экране ничего не происходило (fail closed: без AX коррекция
+        // не выполняется, как и раньше по факту, но теперь это видно в логе). Код 8 —
+        // следующий свободный после занятых 1..7, отдельный от кодов, которыми вызывающая
+        // сторона помечает несовпадение PID и Secure Input, чтобы эта причина отказа не
+        // терялась среди них.
+        guard AXIsProcessTrusted() else {
+            logger.record(.correctionFailed, code: 8)
+            return false
+        }
         return true
     }
 }
