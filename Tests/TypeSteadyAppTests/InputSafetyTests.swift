@@ -139,6 +139,51 @@ struct InputSafetyTests {
         #expect(!flag.value)
     }
 
+    // E2: ветка дедлайна/лимита итераций finishCorrectionGate() — отдельная от watchdog'а
+    // выше (B11/B2): здесь gate закрывается штатным вызовом finishCorrectionGate(), но
+    // replay-очередь пополняется быстрее, чем опустошается (стресс-тест непрерывного
+    // потока событий), и цикл обязан прерваться сам, не крутясь на MainActor бесконечно.
+    // capturedEvents в продакшене наполняется только fileprivate handle() внутри реального
+    // CGEventTap — недостижимо из теста. testBeginGate()/testAppendCapturedEvent() — минимальный
+    // internal-шов (см. комментарий над ним в InputEventTap.swift), который наполняет ту же
+    // очередь тем же способом, не трогая сам callback tap'а.
+    @Test func finishCorrectionGateForceClosesWhenReplayKeepsRefillingQueue() async {
+        let tap = InputEventTap()
+        let event = CapturedInputEvent(type: .keyDown, keyCode: 0, flags: [], isRepeat: false)
+
+        tap.testBeginGate()
+        tap.testAppendCapturedEvent(event)
+
+        var forceClosed: Int?
+        tap.onGateForceClosed = { dropped in forceClosed = dropped }
+
+        var replayIterations = 0
+        tap.finishCorrectionGate { batch in
+            replayIterations += 1
+            // Эмулирует непрерывный поток пользовательского набора во время replay —
+            // очередь никогда не пустеет сама, поэтому цикл обязан прерваться по
+            // correctionGateMaxIterations (200) или correctionGateDeadline (0.25 с), а не
+            // крутиться неограниченно.
+            for event in batch { tap.testAppendCapturedEvent(event) }
+        }
+
+        // notifyGateForceClosed() постит на main queue асинхронно — дать очереди отработать.
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(replayIterations > 0)
+        // Принудительное закрытие обязано было сработать (и о нём обязано было прийти
+        // уведомление) — иначе цикл действительно крутился бы неограниченно.
+        #expect(forceClosed != nil)
+        #expect((forceClosed ?? 0) > 0)
+
+        // Gate не должен "залипнуть" — последующий штатный цикл begin/finish отрабатывает
+        // нормально, очередь пуста, replay не вызывается.
+        var replayedAfter = false
+        tap.beginCorrectionGate()
+        tap.finishCorrectionGate { _ in replayedAfter = true }
+        #expect(!replayedAfter)
+    }
+
     private func snapshot(
         type: CGEventType,
         keyCode: UInt16 = UInt16(kVK_Option),

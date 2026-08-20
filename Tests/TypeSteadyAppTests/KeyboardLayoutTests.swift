@@ -1,6 +1,8 @@
+import Foundation
 import Testing
 @testable import TypeSteadyApp
 
+@MainActor
 struct KeyboardLayoutTests {
     @Test func descriptorRecognizesSupportedLanguages() {
         #expect(LayoutDescriptor(id: "en", name: "ABC", languages: ["en-US"]).languageCode == .english)
@@ -31,5 +33,36 @@ struct KeyboardLayoutTests {
             characters: [modified: "x", plain: "x"]
         )
         #expect(layout.physicalKey(for: "x") == plain)
+    }
+
+    // D4: LayoutCatalog.refresh() присваивает settings.englishLayoutID/russianLayoutID,
+    // что раньше (до B8) синхронно постило .typeSteadySettingsChanged и синхронно
+    // вызывало AppDelegate.applySettings() ИЗНУТРИ refresh() — реентерабельность. Тест
+    // не поднимает реальный LayoutCatalog/TIS (недетерминированно на разных машинах) —
+    // проверяет напрямую то самое условие, которое снимает проблему: присваивание
+    // englishLayoutID/russianLayoutID НЕ постит уведомление синхронно, только с задержкой
+    // (persistDebounced, ~150 мс). Пока это так, независимо от того, кто присваивает
+    // значение, реентерабельного синхронного вызова applySettings() не будет.
+    @Test func layoutIDAssignmentDoesNotPostNotificationSynchronously() async {
+        let name = "TypeSteady.KeyboardLayoutTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = AppSettings(defaults: defaults)
+
+        var notified = false
+        let observer = NotificationCenter.default.addObserver(
+            forName: .typeSteadySettingsChanged,
+            object: settings,
+            queue: nil
+        ) { _ in notified = true }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        settings.englishLayoutID = "en.test"
+        settings.russianLayoutID = "ru.test"
+
+        // Сразу после присваивания уведомление ещё не должно было прийти — оно
+        // дебаунсится на ~150 мс, а не постится синхронно из didSet.
+        #expect(!notified)
     }
 }

@@ -208,6 +208,41 @@ final class InputEventTap: @unchecked Sendable {
         }
     }
 
+    // E2: capturedEvents наполняется только через fileprivate handle(), недостижимый из
+    // тестов без реального CGEventTap — из-за этого ветка дедлайна/лимита итераций
+    // finishCorrectionGate() оставалась непокрытой (B2). Минимальный шов ниже наполняет
+    // очередь так же, как это делал бы handle() под gate — САМ callback event tap'а
+    // (typeSteadyEventTapCallback/handle()) не тронут ни на символ: [TAP]/[REN] не
+    // ослаблены, шов лежит рядом, а не внутри пути, вызываемого системой.
+    //
+    // R8 (пост-ревью спринта 6): testBeginGate() НАМЕРЕННО не взводит watchdogWorkItem —
+    // в отличие от beginCorrectionGate(). Тесту (InputSafetyTests.
+    // finishCorrectionGateForceClosesWhenReplayKeepsRefillingQueue) нужен детерминированный
+    // gate, закрываемый исключительно дедлайном/лимитом итераций самого
+    // finishCorrectionGate(); посторонний 3-секундный таймер watchdog'а, тикающий
+    // параллельно на глобальной очереди, сделал бы тест гонкой с реальным временем. Но это
+    // же означает, что testBeginGate() открывает gate БЕЗ аварийного клапана — тот самый
+    // инвариант B2 (пока isGating == true, callback отбрасывает события) без watchdog'а
+    // даёт мёртвую клавиатуру без самовосстановления. Метод не должен существовать
+    // в поставляемом бинаре ни при каких обстоятельствах — поэтому `#if DEBUG`, а не просто
+    // `internal`: `swift test` собирается в debug-конфигурации и `@testable import` продолжает
+    // видеть метод, а `swift build -c release`/`build-app.sh` (release) физически не включают
+    // этот код в бинарь.
+    #if DEBUG
+    func testBeginGate() {
+        lock.lock()
+        capturedEvents.removeAll(keepingCapacity: true)
+        isGating = true
+        lock.unlock()
+    }
+
+    func testAppendCapturedEvent(_ event: CapturedInputEvent) {
+        lock.lock()
+        if isGating { capturedEvents.append(event) }
+        lock.unlock()
+    }
+    #endif
+
     /// Вызывается watchdog-таймером, не из основного пути коррекции. Закрывает gate,
     /// только если он всё ещё открыт — штатное завершение через finishCorrectionGate()
     /// уже отменяет таймер, так что двойного срабатывания быть не должно.

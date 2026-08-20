@@ -15,10 +15,15 @@ final class InputCoordinator {
     }
 
     private let settings: AppSettings
-    private let layoutCatalog: LayoutCatalog
+    // E1: типы протокольные (LayoutSelecting/SelectionProviding), а не конкретные
+    // LayoutCatalog/AccessibilityTextService — иначе convert()/performHotkeyAction()
+    // недостижимы для детерминированного теста без реального TIS/AX. Продакшен-поведение
+    // не меняется: AppDelegate по-прежнему передаёт настоящие LayoutCatalog/
+    // AccessibilityTextService, которые подписаны под протоколы через extension.
+    private let layoutCatalog: LayoutSelecting
     private let detector: DetectionEngine
     private let correction: CorrectionCoordinator
-    private let accessibility: AccessibilityTextService
+    private let accessibility: SelectionProviding
     private let logger: DiagnosticLogger
     private let appPolicy = AppPolicy()
     private let selectedTextConverter = SelectedTextConverter()
@@ -87,10 +92,10 @@ final class InputCoordinator {
 
     init(
         settings: AppSettings,
-        layoutCatalog: LayoutCatalog,
+        layoutCatalog: LayoutSelecting,
         detector: DetectionEngine,
         correction: CorrectionCoordinator,
-        accessibility: AccessibilityTextService,
+        accessibility: SelectionProviding,
         logger: DiagnosticLogger
     ) {
         self.settings = settings

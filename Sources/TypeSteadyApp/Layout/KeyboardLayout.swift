@@ -117,6 +117,16 @@ final class LayoutCatalog: ObservableObject {
         descriptors = newDescriptors
         lastError = newDescriptors.isEmpty ? "English/Russian раскладки не найдены" : nil
 
+        // D4 (проверено, код не менялся): присваивание englishLayoutID/russianLayoutID
+        // проходит через didSet → persistDebounced(...) — с B8 рассылка
+        // .typeSteadySettingsChanged для строковых свойств (включая оба этих) дебаунсится
+        // на ~150 мс (AppSettings.stringPropertyNotificationDebounce), а не постится
+        // синхронно. AppDelegate.applySettings() подписан именно на это уведомление, поэтому
+        // реентерабельный вызов applySettings() ИЗНУТРИ refresh()/refreshLayouts(), которого
+        // опасался код-ревью, фактически не происходит: к моменту, когда сработает дебаунс,
+        // refresh() уже вернул управление. См. KeyboardLayoutTests.
+        // refreshLayoutsDoesNotReenterApplySettingsSynchronously — регрессионный тест этого
+        // факта на уровне AppSettings (без реального TIS/LayoutCatalog.refresh()).
         if settings.englishLayoutID.isEmpty || newSnapshots[settings.englishLayoutID] == nil {
             settings.englishLayoutID = preferredLayoutID(language: .english, descriptors: newDescriptors) ?? ""
         }

@@ -20,7 +20,7 @@ final class FeedbackPresenter {
 
         let width = max(150, label.frame.width + 40)
         panel.setContentSize(NSSize(width: width, height: 54))
-        if let screen = NSScreen.main {
+        if let screen = activeScreen() {
             let frame = screen.visibleFrame
             panel.setFrameOrigin(NSPoint(x: frame.maxX - width - 24, y: frame.maxY - 74))
         }
@@ -29,6 +29,20 @@ final class FeedbackPresenter {
         let work = DispatchWorkItem { [weak panel] in panel?.orderOut(nil) }
         dismissWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+    }
+
+    /// D8: раньше плашка всегда позиционировалась по NSScreen.main (экран с активным
+    /// меню-баром/фокусом клавиатуры на уровне системы) — на многомониторной конфигурации
+    /// это не обязательно тот экран, где физически работает пользователь и куда только что
+    /// применилась коррекция. TypeSteady — фоновое menu bar приложение (LSUIElement) без
+    /// собственных обычных окон, поэтому "активное окно" — это окно другого, фронтального
+    /// приложения; надёжный источник для него — положение указателя мыши, а не
+    /// NSApp.keyWindow (его у нас нет) и не NSWorkspace.frontmostApplication (даёт только
+    /// приложение, не экран). NSScreen.main остаётся запасным вариантом, если экран под
+    /// курсором почему-то не определился.
+    private func activeScreen() -> NSScreen? {
+        let mouseLocation = NSEvent.mouseLocation
+        return NSScreen.screens.first { $0.frame.contains(mouseLocation) } ?? NSScreen.main
     }
 
     private func makePanel() -> NSPanel {

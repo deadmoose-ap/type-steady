@@ -73,6 +73,15 @@ enum HotkeyChoice: Int, CaseIterable, Identifiable {
         self == .optionOnly ? nil : UInt32(kVK_Space)
     }
 
+    // D6: для .optionOnly carbonKeyCode == nil, поэтому matches() всегда возвращает false —
+    // .optionOnly распознаётся отдельным путём (ModifierOnlyHotkeyRecognizer в
+    // InputCoordinator.handle()), а не через keyCode+flags здесь. Следствие: пока выбран
+    // .optionOnly, ЛЮБАЯ комбинация Option+клавиша (не только сам Option) не совпадает с
+    // isSwitcherHotkey в InputCoordinator.handle() и уходит в reset() — это стирает
+    // manualCandidate. Это осознанное и приемлемое поведение (Option+любая другая клавиша
+    // при выбранном .optionOnly-хоткее — это обычный ввод, а не попытка вызвать хоткей),
+    // но оно было недокументированным — см. CODE_REVIEW_2026-08-19.md D6 и
+    // HotkeyChoiceTests.optionOnlyNeverMatchesKeyCodeAndFlagsCombination.
     func matches(keyCode: UInt16, flags: CGEventFlags) -> Bool {
         guard let carbonKeyCode else { return false }
         let modifiers = flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
@@ -132,9 +141,14 @@ final class AppSettings: ObservableObject {
             persistDebounced(Key.excludedBundleIDs, excludedBundleIDs)
         }
     }
+    // D1: раньше alwaysConvert кэшировался простым lineSet — сравнение на границе слова
+    // сверялось с целой строкой правила, поэтому многословный термин в «Всегда исправлять»
+    // не срабатывал НИКОГДА (решение принимается по одному слову за раз). Симметрично
+    // neverConvert → neverCorrectRules: UserTermRules раскладывает фразу на компоненты,
+    // так что каждое слово многословного термина защищено индивидуально.
     @Published var alwaysConvert: String {
         didSet {
-            alwaysConvertSet = lineSet(alwaysConvert)
+            alwaysConvertRules = UserTermRules(alwaysConvert)
             persistDebounced(Key.alwaysConvert, alwaysConvert)
         }
     }
@@ -145,13 +159,11 @@ final class AppSettings: ObservableObject {
         }
     }
     private(set) var neverCorrectRules: UserTermRules
-    // B4: были вычисляемыми свойствами (lineSet прогоняет каждую строку через
-    // UserTermRules.normalize) и пересчитывались на каждое нажатие клавиши — excludedBundleIDSet
-    // читается в InputCoordinator.handle()/DetectionEngine.proposal() на каждый keyDown,
-    // alwaysConvertSet — на каждый завершённый токен. Теперь кэшируются в didSet, тем же
-    // паттерном, что и neverConvert → neverCorrectRules выше.
+    private(set) var alwaysConvertRules: UserTermRules
+    // B4: excludedBundleIDSet — вычисляемое свойство пересчитывалось бы на каждое нажатие
+    // клавиши (lineSet прогоняет каждую строку через UserTermRules.normalize), а читается
+    // оно в InputCoordinator.handle() на каждый keyDown. Кэшируется в didSet.
     private(set) var excludedBundleIDSet: Set<String>
-    private(set) var alwaysConvertSet: Set<String>
     private var pendingNotification: DispatchWorkItem?
     private static let stringPropertyNotificationDebounce: TimeInterval = 0.15
 
@@ -180,14 +192,17 @@ final class AppSettings: ObservableObject {
         let storedNeverConvert = defaults.string(forKey: Key.neverConvert) ?? ""
         neverConvert = storedNeverConvert
         neverCorrectRules = UserTermRules(storedNeverConvert)
-        // Кэши инициализируются здесь напрямую (а не через didSet выше — didSet не
+        alwaysConvertRules = UserTermRules(storedAlwaysConvert)
+        // Кэш инициализируется здесь напрямую (а не через didSet выше — didSet не
         // выполняется при первичном присваивании в init) тем же способом, что и
-        // neverCorrectRules двумя строками выше.
+        // neverCorrectRules/alwaysConvertRules двумя строками выше.
         excludedBundleIDSet = Self.lineSet(storedExcludedBundleIDs)
-        alwaysConvertSet = Self.lineSet(storedAlwaysConvert)
     }
 
     var neverConvertSet: Set<String> { neverCorrectRules.entries }
+    // Обратная совместимость по имени для существующих мест чтения (UI/тесты) — тот же
+    // набор нормализованных строк правила целиком, что был у прежнего alwaysConvertSet.
+    var alwaysConvertSet: Set<String> { alwaysConvertRules.entries }
 
     private func lineSet(_ source: String) -> Set<String> {
         Self.lineSet(source)

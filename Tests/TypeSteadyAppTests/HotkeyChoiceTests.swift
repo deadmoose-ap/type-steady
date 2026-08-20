@@ -40,6 +40,16 @@ struct HotkeyChoiceTests {
         #expect(HotkeyChoice.optionOnly.eventFlags == [.maskAlternate])
     }
 
+    // D6: закрепляет намеренное (см. комментарий над HotkeyChoice.matches) поведение —
+    // .optionOnly не совпадает НИ С ЧЕМ через matches(keyCode:flags:), включая Option+любая
+    // буква, а не только "случайные" сочетания. everyPresetMatchesOnlyItsExactShortcut выше
+    // проверяет это как частный случай общего цикла; здесь — явно и по имени.
+    @Test func optionOnlyNeverMatchesKeyCodeAndFlagsCombination() {
+        #expect(!HotkeyChoice.optionOnly.matches(keyCode: UInt16(kVK_Space), flags: [.maskAlternate]))
+        #expect(!HotkeyChoice.optionOnly.matches(keyCode: UInt16(kVK_ANSI_A), flags: [.maskAlternate]))
+        #expect(!HotkeyChoice.optionOnly.matches(keyCode: UInt16(kVK_ANSI_A), flags: []))
+    }
+
     @Test func shiftPresetIncludesShiftInEventTapMatching() {
         #expect(HotkeyChoice.controlShiftSpace.eventFlags == [.maskControl, .maskShift])
         #expect(HotkeyChoice.controlShiftSpace.matches(

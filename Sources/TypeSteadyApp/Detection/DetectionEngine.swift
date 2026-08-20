@@ -24,6 +24,12 @@ final class DetectionEngine {
         context: AppContext,
         settings: AppSettings
     ) -> CorrectionProposal? {
+        // D2: normalize(_:) здесь — приватная функция DetectionEngine с ДРУГИМ порядком
+        // Unicode-нормализации, чем UserTermRules.normalize (lowercased∘precomposed vs
+        // precomposed∘lowercased). Она остаётся для внутреннего сравнения currentAlternate
+        // между собой, но НЕ используется для сверки с пользовательскими правилами — там
+        // единая функция UserTermRules.normalize (см. alwaysConvertRules.contains ниже и
+        // neverCorrectRules.contains, который уже так делал).
         let normalizedCurrent = normalize(current)
         let normalizedAlternate = normalize(alternate)
         guard !normalizedCurrent.isEmpty,
@@ -35,7 +41,11 @@ final class DetectionEngine {
         let codeEditor = settings.strictCodeEditors && appPolicy.isCodeEditor(bundleIdentifier: context.bundleIdentifier)
         guard !appPolicy.isStructurallyProtected(current, inCodeEditor: codeEditor) else { return nil }
 
-        if settings.alwaysConvertSet.contains(normalizedCurrent) {
+        // D1: UserTermRules.contains сама нормализует через UserTermRules.normalize и
+        // проверяет и целую фразу, и protectedTokens по каждому слову — многословный термин
+        // в «Всегда исправлять» срабатывает на каждой своей границе слова, симметрично
+        // neverCorrectRules.contains выше.
+        if settings.alwaysConvertRules.contains(current) {
             return CorrectionProposal(
                 original: current,
                 replacement: alternate,
