@@ -152,7 +152,15 @@ final class InputCoordinator {
             return
         }
 
-        let shortcutModifiers = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift])
+        // G1: .maskShift сюда НЕ входит. Shift+буква — это обычный набор заглавной, а не
+        // сочетание клавиш: заглавность уже моделируется полем PhysicalKey.shift (см.
+        // physicalKey(from:) ниже) и рендерится через карту раскладки в KeyboardLayoutSnapshot.
+        // Если включить Shift в «шорткаты», первое же нажатие Shift+буква сбрасывает
+        // TypingStateMachine (или, для хоткея, инвалидирует состояние) ДО того, как заглавная
+        // буква попадёт в модель — теряется первая буква каждого слова с заглавной, а
+        // детектор потом видит и исправляет только хвост слова. Это и был баг G1
+        // («Леша» → «Лtif»): «Л» терялась, «еша» уходило в детектор отдельно и заменялось.
+        let shortcutModifiers = event.flags.intersection([.maskCommand, .maskControl, .maskAlternate])
         let isSwitcherHotkey = settings.manualHotkey.matches(keyCode: event.keyCode, flags: event.flags)
         if correction.lastCorrection != nil && !isSwitcherHotkey {
             correction.clearUndo()
@@ -168,7 +176,20 @@ final class InputCoordinator {
 
         switch event.keyCode {
         case 51:
-            state.backspace(timestamp: event.timestamp)
+            // R10 (пост-ревью Opus 5): Shift+Delete НЕ приравнивается к обычному Backspace.
+            // В части приложений/полей это delete-to-end-of-line или удаление слова целиком,
+            // а не одного символа — и мы не можем это доказать по одному событию клавиатуры.
+            // Если ошибочно предположить «минус один физический ключ» через state.backspace(),
+            // модель разойдётся с реально удалённым текстом: пользователь допечатает поверх
+            // «пустого» экрана, а deletionCount коррекции окажется рассчитан по неверной длине
+            // и сотрёт символы ПЕРЕД словом. Fail closed — как и с границей «. », которую
+            // Backspace не переоткрывает: если положение курсора нельзя доказать безопасно,
+            // состояние сбрасывается, а не достраивается на основании предположения.
+            if event.flags.contains(.maskShift) {
+                reset()
+            } else {
+                state.backspace(timestamp: event.timestamp)
+            }
             return
         case 36, 48, 53, 71, 76, 115, 116, 117, 119, 121, 123, 124, 125, 126:
             reset()
