@@ -59,7 +59,6 @@ struct SettingsView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
-        .background(WindowMaterialBackground().ignoresSafeArea())
         .frame(minWidth: 780, minHeight: 560)
         .confirmationDialog(
             "Сбросить разрешения TypeSteady?",
@@ -117,7 +116,6 @@ struct SettingsView: View {
             .padding(.top, 28)
             .padding(.bottom, 32)
         }
-        .background(WindowMaterialBackground().ignoresSafeArea())
         .accessibilityIdentifier("settings.detail.\(destination.rawValue)")
     }
 
@@ -528,7 +526,7 @@ private struct RulesEditor: View {
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .frame(minHeight: minHeight)
-                .background(Color(nsColor: .textBackgroundColor).opacity(0.84), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(Color(nsColor: .textBackgroundColor).opacity(0.7), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
@@ -570,14 +568,6 @@ private struct StatusMessage: View {
 private struct SettingsDivider: View {
     var body: some View {
         Divider().opacity(0.65)
-    }
-}
-
-private struct WindowMaterialBackground: View {
-    var body: some View {
-        Rectangle()
-            .fill(.ultraThinMaterial)
-            .overlay(Color(nsColor: .windowBackgroundColor).opacity(0.2))
     }
 }
 
@@ -649,7 +639,7 @@ private struct AdaptiveGlassPanel<Content: View>: View {
         if #available(macOS 26.0, *) {
             content
                 .padding(16)
-                .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .glassEffect(.clear.interactive(), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         } else {
             content
                 .padding(16)
@@ -720,9 +710,9 @@ final class SettingsWindowController: NSWindowController {
         let window: NSWindow
         let toolbar = NSToolbar(identifier: "TypeSteady.SettingsToolbar")
 
-        materialView.material = .underWindowBackground
+        materialView.material = .hudWindow
         materialView.blendingMode = .behindWindow
-        materialView.state = .followsWindowActiveState
+        materialView.state = .active
 
         container.view = materialView
         container.addChild(hosting)
