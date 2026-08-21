@@ -14,4 +14,4 @@ cmp "$PROJECT_ROOT/Support/AppIcon.icns" \
 test -f "$PROJECT_ROOT/dist/TypeSteady.app/Contents/Resources/Assets.car"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconName' "$PROJECT_ROOT/dist/TypeSteady.app/Contents/Info.plist")" = "TypeSteady"
 xcrun assetutil --info "$PROJECT_ROOT/dist/TypeSteady.app/Contents/Resources/Assets.car" | \
-    rg -q '"AssetType" : "IconGroup"'
+    grep -q '"AssetType" : "IconGroup"'
