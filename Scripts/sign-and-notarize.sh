@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_ROOT="${0:A:h:h}"
 APP_PATH="$PROJECT_ROOT/dist/TypeSteady.app"
-DMG_PATH="$PROJECT_ROOT/dist/TypeSteady-0.1.9-arm64.dmg"
+DMG_PATH="$PROJECT_ROOT/dist/TypeSteady-0.2.0-arm64.dmg"
 
 if [[ -z "${DEVELOPER_ID_APPLICATION:-}" || -z "${NOTARY_KEYCHAIN_PROFILE:-}" ]]; then
     echo "Set DEVELOPER_ID_APPLICATION and NOTARY_KEYCHAIN_PROFILE first." >&2

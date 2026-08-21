@@ -77,9 +77,25 @@ struct InputCoordinatorCorrectionPendingTests {
         )
     }
 
+    // handle() по пути к ветке хоткея-переключателя проходит guard по currentContext():
+    // если кэш пуст или устарел, currentContext() падает обратно на
+    // NSWorkspace.shared.frontmostApplication — то есть на РЕАЛЬНОЕ фронтальное приложение
+    // машины, где запущен тест. Если им окажется hard-denied приложение (например сам
+    // TypeSteady), guard сработает раньше ветки переключателя, вызовет reset() и сотрёт
+    // lastCompleted — тест начнёт флейковать в зависимости от того, что открыто на экране
+    // разработчика. Подставляем в cachedContext заведомо безопасный (не hard-denied, не
+    // в exclude-листе) контекст со свежей меткой времени, чтобы currentContext() гарантированно
+    // вернул его из кэша и НЕ обращался к NSWorkspace — прогон теста не должен зависеть от
+    // того, какое приложение фронтальное на машине.
+    private func primeSafeContext(on coordinator: InputCoordinator) {
+        coordinator.cachedContext = AppContext(processIdentifier: 1, bundleIdentifier: "test")
+        coordinator.cachedContextTimestamp = ProcessInfo.processInfo.systemUptime
+    }
+
     @Test func correctionPendingInterceptsBeforeSwitcherHotkeyLogic() {
         let coordinator = makeCoordinator()
         primeLastCompleted(on: coordinator)
+        primeSafeContext(on: coordinator)
 
         coordinator.correctionPending = true
         coordinator.handle(switcherHotkeyEvent())
@@ -96,6 +112,7 @@ struct InputCoordinatorCorrectionPendingTests {
     @Test func switcherHotkeyPreservesLastCompletedWhenNoCorrectionIsPending() {
         let coordinator = makeCoordinator()
         primeLastCompleted(on: coordinator)
+        primeSafeContext(on: coordinator)
 
         coordinator.correctionPending = false
         coordinator.handle(switcherHotkeyEvent())

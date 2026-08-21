@@ -83,15 +83,28 @@ struct InputSafetyTests {
     // сознательно ждёт дольше.
     @Test func watchdogForceClosesAbandonedGate() async {
         let tap = InputEventTap()
-        await confirmation("gate force-closed by watchdog") { confirmed in
-            tap.onGateForceClosed = { dropped in
-                #expect(dropped == 0)
-                confirmed()
-            }
+        // Раньше здесь была confirmation(...) с фиксированной паузой в 3.3 с (3.0 с реального
+        // watchdog'а + 300 мс "запаса" на доставку notifyGateForceClosed() через
+        // DispatchQueue.main.async). Тот же класс бомбы замедленного действия, что и в
+        // finishCorrectionGateForceClosesWhenReplayKeepsRefillingQueue выше по файлу — просто
+        // с более широким запасом: confirmation() не ждёт confirmed() дольше времени жизни
+        // своего closure, так что если main queue занята дольше 300 мс параллельными
+        // @MainActor-тестами, confirmed() не успевает — тест падает не по существу.
+        // Реальные 3 с ожидания самого watchdog'а — неизбежная и корректная часть теста (мы
+        // проверяем именно продакшен-таймер), но окно ОЖИДАНИЯ уведомления не должно зависеть
+        // от точной длины паузы — ждём событие через continuation с большим страховочным
+        // таймаутом на случай, если уведомление не придёт вовсе (регрессия).
+        let dropped: Int? = await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
+            let gate = SingleResumeGate(continuation)
+            tap.onGateForceClosed = { dropped in gate.resumeOnce(with: dropped) }
             tap.beginCorrectionGate()
             // Намеренно не вызываем finishCorrectionGate() — имитация зависшего пути.
-            try? await Task.sleep(nanoseconds: 3_300_000_000)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 8) {
+                gate.resumeOnce(with: nil)
+            }
         }
+        #expect(dropped != nil)
+        #expect(dropped == 0)
     }
 
     // B2: после принудительного закрытия gate последующий штатный цикл
@@ -99,11 +112,15 @@ struct InputSafetyTests {
     // "залипнуть" в true.
     @Test func gateReopensNormallyAfterForcedClosure() async {
         let tap = InputEventTap()
-        await confirmation("gate force-closed by watchdog") { confirmed in
-            tap.onGateForceClosed = { _ in confirmed() }
+        let dropped: Int? = await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
+            let gate = SingleResumeGate(continuation)
+            tap.onGateForceClosed = { dropped in gate.resumeOnce(with: dropped) }
             tap.beginCorrectionGate()
-            try? await Task.sleep(nanoseconds: 3_300_000_000)
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 8) {
+                gate.resumeOnce(with: nil)
+            }
         }
+        #expect(dropped != nil)
 
         var replayed = false
         tap.beginCorrectionGate()
@@ -147,6 +164,38 @@ struct InputSafetyTests {
     // CGEventTap — недостижимо из теста. testBeginGate()/testAppendCapturedEvent() — минимальный
     // internal-шов (см. комментарий над ним в InputEventTap.swift), который наполняет ту же
     // очередь тем же способом, не трогая сам callback tap'а.
+    // Счётчик итераций replay — пишется исключительно синхронно внутри тела finishCorrectionGate
+    // (до точки await), а читается уже после того, как withCheckedContinuation резюмировалась.
+    // Резюме continuation — точка синхронизации (happens-before), поэтому отдельный lock тут
+    // не нужен: тот же паттерн "класс-обёртка без лока", что и у ForceClosedFlag ниже по файлу.
+    private final class IterationCounter: @unchecked Sendable {
+        var value = 0
+    }
+
+    // Защита от двойного резюма continuation: onGateForceClosed в этом тесте физически может
+    // сработать только один раз (testBeginGate() намеренно не взводит watchdog — см. комментарий
+    // над testBeginGate() в InputEventTap.swift, поэтому сюда долетает только уведомление из
+    // самого finishCorrectionGate()). Но резюмировать continuation дважды — это краш, а не
+    // падение теста, поэтому guard оставлен на случай будущей регрессии в продакшен-коде
+    // (например, если watchdog и дедлайн когда-нибудь начнут стрелять оба).
+    private final class SingleResumeGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var resumed = false
+        private let continuation: CheckedContinuation<Int?, Never>
+
+        init(_ continuation: CheckedContinuation<Int?, Never>) {
+            self.continuation = continuation
+        }
+
+        func resumeOnce(with value: Int?) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !resumed else { return }
+            resumed = true
+            continuation.resume(returning: value)
+        }
+    }
+
     @Test func finishCorrectionGateForceClosesWhenReplayKeepsRefillingQueue() async {
         let tap = InputEventTap()
         let event = CapturedInputEvent(type: .keyDown, keyCode: 0, flags: [], isRepeat: false)
@@ -154,23 +203,45 @@ struct InputSafetyTests {
         tap.testBeginGate()
         tap.testAppendCapturedEvent(event)
 
-        var forceClosed: Int?
-        tap.onGateForceClosed = { dropped in forceClosed = dropped }
+        let replayIterations = IterationCounter()
 
-        var replayIterations = 0
-        tap.finishCorrectionGate { batch in
-            replayIterations += 1
-            // Эмулирует непрерывный поток пользовательского набора во время replay —
-            // очередь никогда не пустеет сама, поэтому цикл обязан прерваться по
-            // correctionGateMaxIterations (200) или correctionGateDeadline (0.25 с), а не
-            // крутиться неограниченно.
-            for event in batch { tap.testAppendCapturedEvent(event) }
+        // notifyGateForceClosed() постит уведомление на main queue асинхронно, а suite гоняется
+        // параллельно с другими @MainActor-тестами — фиксированная пауза (было: 50 мс) не
+        // гарантирует, что очередь main queue успеет отработать под нагрузкой (наблюдалось
+        // ~37% падений на восьми последовательных прогонах). Вместо паузы ждём само событие
+        // через continuation.
+        //
+        // Намеренно НЕ withTaskGroup с гонкой Task.sleep: если реальное уведомление так и не
+        // придёт (регрессия в продакшен-коде), дочерняя задача с withCheckedContinuation внутри
+        // группы останется подвешенной навсегда — CheckedContinuation не резюмируется сам по
+        // себе от cancelAll(). withTaskGroup перед возвратом результата структурно обязан
+        // дождаться завершения ВСЕХ дочерних задач, поэтому такая группа зависла бы точно так
+        // же, как зависал бы тест без таймаута вовсе — просто заменяя один вид зависания другим.
+        // Вместо этого используем один-единственный continuation, который может резюмировать
+        // ЛЮБАЯ из двух сторон — реальный колбэк (main queue) или страховочный таймер (глобальная
+        // очередь) — SingleResumeGate гарантирует ровно одно резюме, какая бы сторона ни
+        // сработала первой. Ни одна сторона не создаёт структурную задачу, которую пришлось бы
+        // потом ждать, — зависание невозможно в принципе.
+        let forceClosed: Int? = await withCheckedContinuation { (continuation: CheckedContinuation<Int?, Never>) in
+            let gate = SingleResumeGate(continuation)
+            tap.onGateForceClosed = { dropped in gate.resumeOnce(with: dropped) }
+            tap.finishCorrectionGate { batch in
+                replayIterations.value += 1
+                // Эмулирует непрерывный поток пользовательского набора во время replay —
+                // очередь никогда не пустеет сама, поэтому цикл обязан прерваться по
+                // correctionGateMaxIterations (200) или correctionGateDeadline (0.25 с),
+                // а не крутиться неограниченно.
+                for event in batch { tap.testAppendCapturedEvent(event) }
+            }
+            // Страховочный таймаут: на порядки больше ожидаемого пути (correctionGateDeadline
+            // 0.25 с + доставка на main queue), но конечный — если уведомление не придёт вовсе,
+            // тест обязан упасть по #expect(forceClosed != nil) ниже, а не висеть.
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 5) {
+                gate.resumeOnce(with: nil)
+            }
         }
 
-        // notifyGateForceClosed() постит на main queue асинхронно — дать очереди отработать.
-        try? await Task.sleep(nanoseconds: 50_000_000)
-
-        #expect(replayIterations > 0)
+        #expect(replayIterations.value > 0)
         // Принудительное закрытие обязано было сработать (и о нём обязано было прийти
         // уведомление) — иначе цикл действительно крутился бы неограниченно.
         #expect(forceClosed != nil)

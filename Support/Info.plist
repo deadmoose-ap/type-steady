@@ -6,12 +6,12 @@
     <string>TypeSteady</string>
     <key>CFBundleExecutable</key>
     <string>TypeSteady</string>
-    <key>CFBundleIdentifier</key>
-    <string>local.typesteady.app</string>
     <key>CFBundleIconFile</key>
     <string>TypeSteady</string>
     <key>CFBundleIconName</key>
     <string>TypeSteady</string>
+    <key>CFBundleIdentifier</key>
+    <string>local.typesteady.app</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.9</string>
+    <string>0.2.0</string>
     <key>CFBundleVersion</key>
-    <string>10</string>
+    <string>11</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>LSUIElement</key>
